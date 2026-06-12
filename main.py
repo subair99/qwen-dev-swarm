@@ -3,6 +3,7 @@ from openai import OpenAI
 from config.settings import settings
 from swarm.agents import create_swarm_agents
 
+
 def test_qwen_connection(agent, prompt: str):
     # Initialize the client with Qwen endpoints
     client = OpenAI(
@@ -13,7 +14,7 @@ def test_qwen_connection(agent, prompt: str):
     print(f"🤖 [{agent.name}] processing request...")
     
     response = client.chat.completions.create(
-        model="qwen-turbo",  # Or qwen-max / local model name depending on your setup
+        model="qwen3.7-plus",  # Or qwen-max / local model name depending on your setup
         messages=[
             {"role": "system", "content": agent.instructions},
             {"role": "user", "content": prompt}
@@ -23,6 +24,7 @@ def test_qwen_connection(agent, prompt: str):
     
     return response.choices[0].message.content
 
+
 def main():
     # 1. Validate Env configuration
     try:
@@ -30,6 +32,10 @@ def main():
     except ValueError as e:
         print(e)
         return
+
+    # Debug line: verify if the key is actually being loaded
+    print(f"DEBUG: Found API Key with length {len(settings.QWEN_API_KEY)} characters.")
+    print(f"DEBUG: Target URL is {settings.QWEN_BASE_URL}")
 
     # 2. Spin up the swarm crew
     crew = create_swarm_agents()
