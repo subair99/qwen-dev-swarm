@@ -1,10 +1,10 @@
-# ui.py
+import os
 import streamlit as st
 from orchestrator import QwenDevSwarmOrchestrator
 
 st.set_page_config(layout="wide", page_title="Qwen-Dev-Swarm Mission Control")
 
-# --- Custom Styling for Hackathon Aesthetic ---
+# --- Custom Styling for Aesthetic ---
 st.markdown("""
     <style>
     .block-container { padding-top: 2rem; }
@@ -30,7 +30,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🚀 Qwen-DevSwarm Mission Control Panel")
+st.title("🚀 Qwen-Dev-Swarm Mission Control Panel")
 
 # Initialize persistent session states for architecture continuity
 if "orchestrator" not in st.session_state:
@@ -88,14 +88,13 @@ col1, col2 = st.columns([1, 1])
 
 with col1:
     st.subheader("💡 Deep Thinking Stream")
-    # Using st.empty layout anchors allows live-overwriting without tearing down components
     thinking_container = st.empty()
+    # 🌟 FIXED: We render out of st.session_state but we DO NOT supply a conflicting widget 'key=' string parameter
     thinking_container.text_area(
         "Qwen Reasoning Logs...", 
         value=st.session_state.thinking_text, 
         height=400, 
-        disabled=True,
-        key="thinking_display"
+        disabled=True
     )
     hitl_container = st.container()
 
@@ -131,14 +130,17 @@ with col2:
 
 # --- Execution Engine Core Runner ---
 def run_swarm_pipeline(hint_text=None):
+    # Only wipe historical data if we are explicitly starting a fresh run from the sidebar
+    if st.session_state.loop_status != "COMPLETED" and st.session_state.loop_status != "PAUSED":
+        st.session_state.thinking_text = ""
+        st.session_state.current_code_text = ""
+        
     st.session_state.loop_status = "RUNNING"
     st.session_state.logs = [] 
-    st.session_state.thinking_text = "" 
-    st.session_state.current_code_text = ""
     
     # Prime the containers visibly right before execution loop launches
-    thinking_container.text_area("Qwen Reasoning Logs...", value="Initializing...", height=400, disabled=True)
-    code_container.code("# Connecting to Qwen Swarm Crew...", language="python")
+    thinking_container.text_area("Qwen Reasoning Logs...", value=st.session_state.thinking_text or "Initializing...", height=400, disabled=True)
+    code_container.code(st.session_state.current_code_text or "# Connecting to Qwen Swarm Crew...", language="python")
 
     # Consume the live event generator stream step-by-step
     event_stream = st.session_state.orchestrator.execute_self_correction_loop(human_hint=hint_text)
@@ -147,20 +149,29 @@ def run_swarm_pipeline(hint_text=None):
         current_agent = event_data.get("active_agent", "")
         current_event = event_data.get("event", "")
         
+        # 🟢 CRITICAL LOG FORCING: Write orchestrator phase changes directly into the thinking stream window!
+        if "message" in event_data and not "type" in event_data:
+            log_line = f"⚙️ [{current_agent}] {event_data['message']}\n"
+            if log_line not in st.session_state.thinking_text:
+                st.session_state.thinking_text += log_line
+                thinking_container.text_area("Qwen Reasoning Logs...", value=st.session_state.thinking_text, height=400, disabled=True)
+
         # Handle Raw Token Packets First
         if "type" in event_data:
             token_text = event_data.get("text", "")
             
             if event_data["type"] == "thinking":
                 st.session_state.thinking_text += token_text
-                # Update text area smoothly without triggering a global page reload
                 thinking_container.text_area("Qwen Reasoning Logs...", value=st.session_state.thinking_text, height=400, disabled=True)
             
             elif event_data["type"] == "content":
-                if "thinking process" in token_text.lower() or "implementing" in token_text.lower():
+                # Capture standard conversational planning logs if no strict XML tag drops
+                if "thinking process" in token_text.lower() or "implementing" in token_text.lower() or "step" in token_text.lower():
                     st.session_state.thinking_text += token_text
                     thinking_container.text_area("Qwen Reasoning Logs...", value=st.session_state.thinking_text, height=400, disabled=True)
                 else:
+                    if st.session_state.current_code_text == "# Awaiting deployment guidelines...":
+                        st.session_state.current_code_text = ""
                     st.session_state.current_code_text += token_text
                     code_container.code(st.session_state.current_code_text, language="python")
             continue 
@@ -183,7 +194,7 @@ def run_swarm_pipeline(hint_text=None):
             st.session_state.loop_status = "COMPLETED"
             update_status_pill("COMPLETED", f"Script executed successfully on Turn {event_data.get('retry_count', 0) + 1}!")
             st.balloons()
-            st.rerun()  # One single final reload to expose download buttons cleanly
+            st.rerun()  # Exposes download triggers cleanly with persistent frozen thinking text blocks safely preserved!
             
         # Handle Hit Ceiling State Handoffs
         if current_event == "hitl_paused":
@@ -192,6 +203,14 @@ def run_swarm_pipeline(hint_text=None):
 
 # Trigger initial autonomous execution track on button click
 if start_btn:
+    # 🛠️ Workspace Clean Sweep Pass: Vaporize stale artifacts before looping
+    target_workspace_file = st.session_state.orchestrator.state["file_path"]
+    if os.path.exists(target_workspace_file):
+        try:
+            os.remove(target_workspace_file)
+        except Exception:
+            pass
+            
     run_swarm_pipeline()
 
 # --- Human-in-the-Loop Form Component Layout ---

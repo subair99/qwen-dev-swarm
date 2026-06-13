@@ -76,11 +76,22 @@ Please output a clean, rewritten version of the full Python script fixing the is
                 "prompt_context": user_prompt
             }
             
-            # Use call_llm_stream to feed tokens through the UI incrementally
+            # 1. Initialize a blank string collector for this turn's response
+            collected_response_text = ""
+            
+            # Consume the live event generator stream step-by-step
             for stream_chunk in self.swarm["coder"].call_llm_stream(user_prompt):
                 yield stream_chunk
+                # Accumulate content tokens as they arrive from the cloud endpoint wire
+                if stream_chunk.get("type") == "content":
+                    collected_response_text += stream_chunk.get("text", "")
+
+            # 2. Hardened write step: Write the accumulated code block directly to disk!
+            if collected_response_text:
+                with open(self.state["file_path"], "w") as f:
+                    f.write(collected_response_text)
             
-            # Grab the fully compiled file representation from disk to test (or use mock fallback if connection failed)
+            # 3. Clean up the old reader block safely
             try:
                 with open(self.state["file_path"], "r") as f:
                     generated_code = f.read()
