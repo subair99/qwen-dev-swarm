@@ -1,80 +1,166 @@
+# swarm/agents.py
 import json
-from typing import List, Dict, Any, Callable, Generator
+import inspect
+import re
+from typing import List, Dict, Any, Callable, Generator, Optional
 from openai import OpenAI
-from config.settings import settings
+
+# Assuming you have a config module. If not, this gracefully handles missing settings.
+try:
+    from config.settings import settings
+except ImportError:
+    class MockSettings:
+        QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        QWEN_API_KEY = None
+        DASHSCOPE_API_KEY = None
+        MODEL_NAME = "qwen-max"
+    settings = MockSettings()
+
+
+class StreamParser:
+    """
+    A non-blocking state machine to parse <thinking> tags from a text stream.
+    It only buffers up to the length of the tag minus 1, ensuring that 
+    '<' characters in code (like 'a < b') are yielded immediately without blocking.
+    """
+    def __init__(self):
+        self.buffer = ""
+        self.inside_thinking = False
+        self.thinking_tag = "<thinking>"
+        self.end_thinking_tag = "</thinking>"
+
+    def process(self, token: str) -> List[tuple]:
+        self.buffer += token
+        results = []
+        
+        while True:
+            if self.inside_thinking:
+                idx = self.buffer.find(self.end_thinking_tag)
+                if idx != -1:
+                    results.append(("thinking", self.buffer[:idx]))
+                    self.buffer = self.buffer[idx + len(self.end_thinking_tag):]
+                    self.inside_thinking = False
+                else:
+                    # Keep only the last len(tag)-1 chars in buffer to prevent blocking
+                    safe_len = len(self.end_thinking_tag) - 1
+                    if len(self.buffer) > safe_len:
+                        results.append(("thinking", self.buffer[:-safe_len]))
+                        self.buffer = self.buffer[-safe_len:]
+                    break
+            else:
+                idx = self.buffer.find(self.thinking_tag)
+                if idx != -1:
+                    if idx > 0:
+                        results.append(("content", self.buffer[:idx]))
+                    self.buffer = self.buffer[idx + len(self.thinking_tag):]
+                    self.inside_thinking = True
+                else:
+                    safe_len = len(self.thinking_tag) - 1
+                    if len(self.buffer) > safe_len:
+                        results.append(("content", self.buffer[:-safe_len]))
+                        self.buffer = self.buffer[-safe_len:]
+                    break
+        return results
+
+    def flush(self) -> List[tuple]:
+        if self.buffer:
+            type_ = "thinking" if self.inside_thinking else "content"
+            return [(type_, self.buffer)]
+        return []
+
 
 class QwenAgent:
     def __init__(
         self, 
         name: str, 
         instructions: str, 
-        tools: List[Callable] = None
+        tools: Optional[List[Callable]] = None,
+        mock_fallback: Optional[Callable[[str], str]] = None
     ):
         self.name = name
-        self.instructions = instructions  # This acts as our system prompt
+        self.instructions = instructions
         self.tools = tools or []
+        self.mock_fallback = mock_fallback
         
-        # 1. Pull the direct Aliyun MaaS cloud endpoint layer from settings natively using getattr
-        self.base_url = getattr(
-            settings, 
-            "QWEN_BASE_URL", 
-            "https://ws-zp9gpq4ly3nzvc4s.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
-        )
+        # 1. Pull configuration from settings natively
+        self.base_url = getattr(settings, "QWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
         
-        # 2. Securely extract your Qwen Cloud API key
+        # 2. Securely extract API key
         self.api_key = getattr(settings, "QWEN_API_KEY", None) or getattr(settings, "DASHSCOPE_API_KEY", None)
         
-        # 3. Target your preferred production cloud model name string (Single source of truth)
-        self.model_name = getattr(settings, "MODEL_NAME", "qwen3.7-max")
+        # 3. Target model name
+        self.model_name = getattr(settings, "MODEL_NAME", "qwen-max")
         
-        # Guardrail check: Warn you early if environment variables fail to load from config
+        # Guardrail check: Fail fast if environment variables fail to load
         if not self.api_key:
-            print(f"⚠️ Warning: Cloud access key could not be resolved from settings for agent: {self.name}")
+            raise ValueError(f"Critical: Cloud access key could not be resolved from settings for agent: {self.name}")
         
-        # Initialize the OpenAI wrapper client pointing to your official cloud engine workspace
+        # Initialize the OpenAI wrapper client
         self.client = OpenAI(
             base_url=self.base_url,
             api_key=self.api_key
         )
 
+        # Pre-process tools into OpenAI schema format
+        self.tool_schemas = self._generate_tool_schemas(self.tools)
+
+    def _generate_tool_schemas(self, tools: List[Callable]) -> List[Dict[str, Any]]:
+        """Converts Python callables into OpenAI tool schemas using inspect."""
+        schemas = []
+        for func in tools:
+            sig = inspect.signature(func)
+            properties = {}
+            required = []
+            
+            for param_name, param in sig.parameters.items():
+                param_type = "string" # default
+                if param.annotation != inspect.Parameter.empty:
+                    if param.annotation == int:
+                        param_type = "integer"
+                    elif param.annotation == float:
+                        param_type = "number"
+                    elif param.annotation == bool:
+                        param_type = "boolean"
+                    elif param.annotation in (list, List):
+                        param_type = "array"
+                    elif param.annotation in (dict, Dict):
+                        param_type = "object"
+                
+                properties[param_name] = {"type": param_type}
+                if param.default == inspect.Parameter.empty:
+                    required.append(param_name)
+                    
+            schemas.append({
+                "type": "function",
+                "function": {
+                    "name": func.__name__,
+                    "description": func.__doc__ or "",
+                    "parameters": {
+                        "type": "object",
+                        "properties": properties,
+                        "required": required
+                    }
+                }
+            })
+        return schemas
+
+    def _execute_tool(self, name: str, arguments: str) -> str:
+        """Executes a tool by name with the provided JSON arguments."""
+        tool_map = {t.__name__: t for t in self.tools}
+        if name not in tool_map:
+            return json.dumps({"error": f"Tool {name} not found"})
+        
+        try:
+            args_dict = json.loads(arguments)
+            result = tool_map[name](**args_dict)
+            return json.dumps({"result": result})
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
     def call_llm(self, user_prompt: str, require_json: bool = False) -> str:
         """
-        Executes a blocking inference call to the Qwen model using the OpenAI client wrapper.
-        Includes thinking preservation logic and structured JSON formatting adjustments.
-        """
-        messages = [
-            {"role": "system", "content": self.instructions},
-            {"role": "user", "content": user_prompt}
-        ]
-
-        # Base API keyword args
-        kwargs = {
-            "model": self.model_name,
-            "messages": messages,
-            "temperature": 0.2,  # Low temperature for highly deterministic engineering output
-            # Ensure thinking preservation remains enabled in the local runtime payload
-            "extra_body": {"preserve_thinking": True} 
-        }
-
-        # Enforce structured JSON constraint if flagged
-        if require_json:
-            kwargs["response_format"] = {"type": "json_object"}
-
-        try:
-            response = self.client.chat.completions.create(**kwargs)
-            # Extracted string naturally contains any wrapped <thinking> tags if supported by runtime
-            return response.choices[0].message.content
-            
-        except Exception as e:
-            # Safe local fallback structure in case of network or authentication hiccups during tests
-            print(f"⚠️ OpenAI Client Error on {self.name}: {e}")
-            return self._get_mock_fallback(user_prompt)
-
-    def call_llm_stream(self, user_prompt: str, require_json: bool = False) -> Generator[Dict[str, Any], None, None]:
-        """
-        Executes a real-time streaming inference call to the Qwen cloud endpoint.
-        Maintains a rolling text accumulation state machine buffer to cleanly isolate 
-        and route deep <thinking> tags away from raw code/JSON outputs dynamically.
+        Executes a blocking inference call to the Qwen model.
+        Includes tool calling support and thinking preservation.
         """
         messages = [
             {"role": "system", "content": self.instructions},
@@ -85,134 +171,273 @@ class QwenAgent:
             "model": self.model_name,
             "messages": messages,
             "temperature": 0.2,
-            "stream": True,  # Enables real-time delta chunk allocation
-            "extra_body": {"preserve_thinking": True}
+            # DashScope standard for QwQ/Qwen3 thinking models
+            "extra_body": {"enable_thinking": True} 
         }
 
         if require_json:
             kwargs["response_format"] = {"type": "json_object"}
 
+        if self.tool_schemas:
+            kwargs["tools"] = self.tool_schemas
+            kwargs["tool_choice"] = "auto"
+
+        try:
+            response = self.client.chat.completions.create(**kwargs)
+            message = response.choices[0].message
+            
+            # Handle tool calls loop
+            if message.tool_calls:
+                messages.append(message)
+                for tool_call in message.tool_calls:
+                    result = self._execute_tool(tool_call.function.name, tool_call.function.arguments)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": result
+                    })
+                
+                # Recursive call to get final response after tool execution
+                kwargs.pop("tools", None)
+                kwargs.pop("tool_choice", None)
+                kwargs["messages"] = messages
+                response = self.client.chat.completions.create(**kwargs)
+                return response.choices[0].message.content
+                
+            return message.content
+            
+        except Exception as e:
+            print(f"⚠️ OpenAI Client Error on {self.name}: {e}")
+            if self.mock_fallback:
+                return self.mock_fallback(user_prompt)
+            raise
+
+    def call_llm_stream(self, user_prompt: str, require_json: bool = False) -> Generator[Dict[str, Any], None, None]:
+        """
+        Executes a real-time streaming inference call.
+        Uses a non-blocking state machine to cleanly isolate <thinking> tags 
+        without blocking the stream on standard '<' characters in code.
+        """
+        messages = [
+            {"role": "system", "content": self.instructions},
+            {"role": "user", "content": user_prompt}
+        ]
+
+        kwargs = {
+            "model": self.model_name,
+            "messages": messages,
+            "temperature": 0.2,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+            "extra_body": {"enable_thinking": True}
+        }
+
+        if require_json:
+            kwargs["response_format"] = {"type": "json_object"}
+
+        if self.tool_schemas:
+            kwargs["tools"] = self.tool_schemas
+            kwargs["tool_choice"] = "auto"
+
         try:
             stream = self.client.chat.completions.create(**kwargs)
         except Exception as e:
             print(f"⚠️ Streaming Error on {self.name}: {e}")
-            fallback_text = self._get_mock_fallback(user_prompt)
-            yield {"type": "content", "text": fallback_text}
+            if self.mock_fallback:
+                yield {"type": "content", "text": self.mock_fallback(user_prompt)}
             return
 
-        # Stateful stream tracking markers
-        inside_thinking = False
-        full_buffer = ""
+        parser = StreamParser()
+        tool_calls_buffer = {}
 
         for chunk in stream:
-            # Safeguard against empty choices lists from cloud metadata chunks
             if not getattr(chunk, "choices", None) or len(chunk.choices) == 0:
                 continue
                 
             delta = chunk.choices[0].delta
             
-            # 🔍 Diagnostic Fallback Strategy Check
-            # 1. Official Native Aliyun/DashScope Reasoning Stream Attributes
+            # 1. Native Reasoning Token (DashScope standard for QwQ/Qwen3)
             reasoning_token = getattr(delta, "reasoning_content", None)
-            
-            # 2. Dictionary Fallback Lookup (In case attribute parsing strips it)
-            if not reasoning_token and hasattr(delta, "get"):
-                reasoning_token = delta.get("reasoning_content") or delta.get("reasoning")
-
             if reasoning_token:
                 yield {"type": "thinking", "text": reasoning_token}
                 continue
 
-            # 3. Fallback check for standard text block elements
+            # 2. Tool Calls (Streaming)
+            if getattr(delta, "tool_calls", None):
+                for tc_delta in delta.tool_calls:
+                    idx = tc_delta.index
+                    if idx not in tool_calls_buffer:
+                        tool_calls_buffer[idx] = {"id": "", "name": "", "arguments": ""}
+                    if tc_delta.id: tool_calls_buffer[idx]["id"] = tc_delta.id
+                    if tc_delta.function and tc_delta.function.name: tool_calls_buffer[idx]["name"] += tc_delta.function.name
+                    if tc_delta.function and tc_delta.function.arguments: tool_calls_buffer[idx]["arguments"] += tc_delta.function.arguments
+                continue
+
+            # 3. Standard Content Token
             token = getattr(delta, "content", None) or ""
             if not token:
                 continue
 
-            full_buffer += token
+            # Process through non-blocking state machine
+            for type_, text in parser.process(token):
+                yield {"type": type_, "text": text}
 
-            # 4. Defensive Tag Checking (In case proxy endpoint wraps thoughts as text strings)
-            if "<thinking>" in full_buffer and not inside_thinking:
-                inside_thinking = True
-                _, trailing = full_buffer.split("<thinking>", 1)
-                full_buffer = ""  
-                if trailing:
-                    yield {"type": "thinking", "text": trailing}
-                continue
+        # Flush remaining buffer
+        for type_, text in parser.flush():
+            yield {"type": type_, "text": text}
 
-            elif "</thinking>" in full_buffer and inside_thinking:
-                inside_thinking = False
-                thinking_chunk, trailing = full_buffer.split("</thinking>", 1)
-                full_buffer = trailing  
-                if thinking_chunk:
-                    yield {"type": "thinking", "text": thinking_chunk}
-                continue
+        # Yield tool calls at the end
+        for idx, tc in tool_calls_buffer.items():
+            yield {"type": "tool_call", "id": tc["id"], "name": tc["name"], "arguments": tc["arguments"]}
 
-            # Route tokens based on active parser fallback state settings
-            if inside_thinking:
-                yield {"type": "thinking", "text": token}
-                full_buffer = ""
-            else:
-                if "<" not in full_buffer:
-                    yield {"type": "content", "text": full_buffer}
-                    full_buffer = ""
 
-        # Final flush cleanup pass for content tail tokens left in the buffer
-        if full_buffer:
-            yield {"type": "content", "text": full_buffer}
+def extract_code_from_markdown(text: str) -> str:
+    """Extracts code from markdown blocks, falling back to raw text."""
+    match = re.search(r'```(?:python)?\n(.*?)```', text, re.DOTALL | re.IGNORECASE)
+    return match.group(1).strip() if match else text.strip()
 
-    def _get_mock_fallback(self, user_prompt: str) -> str:
-        """Fallback mock engine to keep your Phase 2 self-correction loop robust during offline testing."""
-        if self.name == "Lead_Coder":
-            if "feedback" in user_prompt.lower():
-                return "print('Calculating Fibonacci numbers: 0, 1, 1, 2, 3, 5')"
-            return "print('Calculating Fibonacci' "  # Intentionally missing bracket
-            
-        elif self.name == "QA_Analyst":
-            return json.dumps({
-                "status": "FAIL",
-                "error_summary": "SyntaxError: unexpected EOF while parsing",
-                "failed_component": "generated_script.py, Line 1",
-                "remediation_hint": "Add a closing parenthesis ')' to the end of your print statement."
-            })
-        return ""
+
+def create_agent(
+    name: str, 
+    instructions: str, 
+    tools: Optional[List[Callable]] = None,
+    mock_fallback: Optional[Callable[[str], str]] = None
+) -> QwenAgent:
+    """Standard deterministic agent creation factory engine."""
+    return QwenAgent(
+        name=name, 
+        instructions=instructions, 
+        tools=tools,
+        mock_fallback=mock_fallback
+    )
 
 
 def create_swarm_agents() -> Dict[str, QwenAgent]:
-    """Initializes the minimal dev swarm crew with distinct engineering behaviors."""
+    """Initializes the complete dev swarm crew with distinct engineering behaviors."""
+
+    prompt_engineer = create_agent(
+        name="Prompt_Engineer_Agent",
+        instructions=(
+            "You are an expert Meta-Prompt Engineer. Your exclusive job is to translate raw, high-level "
+            "feature requests into comprehensive, production-hardened system prompts for a Lead Coder agent.\n\n"
+            "PROMPT CONSTRUCTION MANDATES:\n"
+            "- Analyze the request for hidden technical traps (e.g., concurrency race conditions, I/O bottlenecks).\n"
+            "- Inject explicit algorithmic requirements into the prompt.\n"
+            "- Enforce strict structural guardrails: mandate type validation, negative bounds checking, and DRY principles.\n"
+            "- Output ONLY the final compiled system prompt. Do not include conversational preambles."
+        )
+    )
     
-    architect = QwenAgent(
+    architect = create_agent(
         name="Software_Architect",
         instructions=(
-            "You are a Software Architect. You break down complex feature requests "
-            "into step-by-step modular designs and precise technical requirements tasks."
+            "You are an expert Software Architect. Your core mandate is to decompose complex feature requests "
+            "into strict, modular technical specifications and highly structured implementation plans.\n\n"
+            "SYSTEM BLUEPRINT MANDATES:\n"
+            "- Break tasks into clean, decoupled class interfaces or standalone pure functions.\n"
+            "- DESIGN FOR DRY: Explicitly identify where parameters or mathematical limits can consolidate separate execution loops.\n"
+            "- DESIGN FOR I/O EFFICIENCY: Factor in memory-buffered states and explicit transactional commit gates.\n"
+            "- DEFENSIVE TYPE ARCHITECTURE: Map out strict parameter types and edge-case exceptions up front.\n"
+            "- TESTING ARCHITECTURE: Mandate that all test suites must be DETERMINISTIC. "
+            "Explicitly forbid time-based assertions (e.g., assertLess with elapsed time, time.time() comparisons) "
+            "as they cause flaky tests on CI. Instead, require correctness-based assertions that verify actual values.\n"
+            "- Require test coverage for: boundary values (0, 1, 2), known reference values (e.g., fib(10)=55, fib(20)=6765), "
+            "type rejections (including booleans), and negative bounds.\n"
+            "- Respond ONLY with structural requirements, method signatures, or architectural workflow blueprints."
         )
     )
     
-    coder = QwenAgent(
+    coder = create_agent(
         name="Lead_Coder",
         instructions=(
-            "You are an expert Developer Agent named Lead_Coder. Your job is to output pure, "
-            "functional Python code matching requested specs. Provide raw code ONLY. Do not "
-            "wrap your output inside markdown codeblocks (such as ```python ... ```) or conversational filler."
+            "You are an expert Software Engineer and Technical Architect. Your task is to write production-grade, "
+            "highly optimized code based on the provided architectural specifications.\n\n"
+            "CORE DIRECTIVES:\n"
+            "1. DRY & MODULARITY: Consolidate redundant logic. If multiple execution modes share algorithmic "
+            "structures, calculate loop boundaries mathematically upfront rather than duplicating code blocks.\n"
+            "2. DEFENSIVE PROGRAMMING: Include strict type validation, bounds checking, and explicit error "
+            "handling (TypeError, ValueError) for all edge cases.\n"
+            "3. I/O OPTIMIZATION: Avoid eager disk/network writes in loops. Implement stateful dirty-tracking "
+            "(e.g., self._is_dirty) and batch-processing entry points to consolidate I/O into single atomic transactions.\n"
+            "4. TESTING QUALITY: All tests must be deterministic. Never use time-based assertions. "
+            "Verify actual output values, not just counts or lengths. Include tests for boundary values, "
+            "known reference values, type rejections, and edge cases.\n"
+            "5. FORMATTING: Always wrap your code in standard markdown code blocks (```python ... ```). "
+            "Do not include conversational filler before or after the code block."
+        )
+    )
+ 
+    qa_analyst = create_agent(
+        name="QA_Analyst",
+        instructions=(
+            "You are an expert, adversarial QA Analyst and Code Reviewer. Your objective is to audit "
+            "execution outputs, analyze runtime tracebacks, and identify logical bugs, structural "
+            "redundancies, resource-heavy anti-patterns, AND testing deficiencies.\n\n"
+            
+            "AUDIT MANDATES:\n"
+            "- Mark 'FAIL' if the script crashed, timed out, violated the DRY principle, or included "
+            "redundant loops.\n"
+            "- Mark 'FAIL' if the test suite contains FLAKY TESTS (e.g., time-based assertions that "
+            "will fail on slow CI machines, use of time.time() or time.sleep() in assertions).\n"
+            "- Mark 'FAIL' if the test suite lacks CORRECTNESS TESTS for larger/edge-case values "
+            "(e.g., only testing fib(0), fib(1), fib(2) but not fib(10)=55 or fib(20)=6765).\n"
+            "- Mark 'FAIL' if tests only verify counts/lengths but not actual output values "
+            "(e.g., checking len(result) but not result itself).\n"
+            "- Mark 'FAIL' if type validation tests don't explicitly reject booleans (True/False).\n"
+            "- Mark 'PASS' only if the execution status is SUCCESS, the architecture is optimized, "
+            "AND the test suite is comprehensive, deterministic, and verifies actual values.\n\n"
+            
+            "OUTPUT FORMAT:\n"
+            "Respond with a valid JSON object matching the following schema:\n"
+            "{\n"
+            '  "status": "FAIL" or "PASS",\n'
+            '  "error_summary": "Precise classification of the issue",\n'
+            '  "failed_component": "Target class, method name, or line range",\n'
+            '  "remediation_hint": "Concrete instruction on how to fix"\n'
+            "}"
         )
     )
     
-    qa_analyst = QwenAgent(
-        name="QA_Analyst",
+    code_reviewer = create_agent(
+        name="Code_Reviewer",
         instructions=(
-            "You are an adversarial QA Analyst. Your exclusive objective is to analyze execution errors "
-            "and provide structured correction feedback. You must respond ONLY with a raw JSON object matching this schema:\n"
+            "You are an expert Code Reviewer specializing in test quality, CI reliability, and code correctness. "
+            "Your job is to scan generated code for common anti-patterns and testing deficiencies BEFORE it reaches "
+            "the QA Analyst.\n\n"
+            
+            "CHECK FOR:\n"
+            "1. FLAKY TESTS: Any use of time.time(), time.sleep(), or assertLess/assertGreater with elapsed time "
+            "in test assertions. These cause non-deterministic test failures on CI.\n"
+            "2. WEAK ASSERTIONS: Tests that only check length/count/size but not actual values. "
+            "For example, checking len(result) == 5 but not verifying result == [1, 2, 3, 4, 5].\n"
+            "3. MISSING EDGE CASES: No tests for boundary values (0, 1, empty inputs), type rejections "
+            "(especially booleans which are technically ints in Python), or negative/invalid inputs.\n"
+            "4. MISLEADING COMMENTS: Comments that contradict the code, make unsupported performance claims, "
+            "or describe behavior that doesn't match the implementation.\n"
+            "5. MISSING REFERENCE VALUES: No tests against known correct outputs for larger inputs "
+            "(e.g., no test that fib(10) == 55 or fib(20) == 6765).\n\n"
+            
+            "OUTPUT FORMAT:\n"
+            "Respond with a JSON object:\n"
             "{\n"
-            '  "status": "FAIL" or "PASS",\n'
-            '  "error_summary": "Short description of the runtime exception",\n'
-            '  "failed_component": "File path and line range of code containing the issue",\n'
-            '  "remediation_hint": "Concrete instruction on how to fix this syntax or runtime error"\n'
+            '  "issues_found": ["list", "of", "issues"],\n'
+            '  "severity": "HIGH" or "MEDIUM" or "LOW",\n'
+            '  "fix_instructions": "Detailed instructions for the Lead Coder"\n'
+            "}\n\n"
+            
+            "If no issues are found, return:\n"
+            "{\n"
+            '  "issues_found": [],\n'
+            '  "severity": "NONE",\n'
+            '  "fix_instructions": "Code passes review."\n'
             "}"
         )
     )
     
     return {
+        "prompt_engineer": prompt_engineer,
         "architect": architect,
         "coder": coder,
-        "qa": qa_analyst
+        "qa_analyst": qa_analyst,
+        "code_reviewer": code_reviewer
     }
