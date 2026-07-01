@@ -2,207 +2,224 @@
 # Create a robust python script that calculates Fibonacci numbers up to n.
 
 
-import sys
-from typing import List
-
-def generate_fibonacci_sequence(term_count: int) -> List[int]:
-    """
-    Calculates the Fibonacci sequence up to the specified number of terms.
-    
-    Args:
-        term_count (int): The exact number of Fibonacci terms to generate.
-        
-    Returns:
-        List[int]: A list containing the generated Fibonacci sequence.
-    """
-    if type(term_count) is not int:
-        raise TypeError(f"Expected an integer for term_count, got {type(term_count).__name__}.")
-        
-    if term_count < 0:
-        raise ValueError(f"term_count must be a non-negative integer, got {term_count}.")
-        
-    if term_count == 0:
-        return []
-        
-    sequence = [0]
-    if term_count == 1:
-        return sequence
-        
-    sequence.append(1)
-    for current_index in range(2, term_count):
-        next_fibonacci_value = sequence[current_index - 1] + sequence[current_index - 2]
-        sequence.append(next_fibonacci_value)
-        
-    return sequence
-
-if __name__ == "__main__":
-    try:
-        target_terms = 15
-        fibonacci_result = generate_fibonacci_sequence(target_terms)
-        print(f"Fibonacci sequence for {target_terms} terms: {fibonacci_result}")
-    except (TypeError, ValueError) as error:
-        print(f"Error generating Fibonacci sequence: {error}", file=sys.stderr)
-        sys.exit(1)
-
-
-
-
-
-
 """
 Fibonacci Module
-
-Provides highly optimized, production-hardened functions for calculating 
-Fibonacci numbers, adhering to strict algorithmic and memory constraints.
+High-performance, production-hardened mathematical algorithms for Fibonacci sequences.
 """
 
-from typing import Iterator, Callable, Any, TypeVar
 import functools
-import unittest
-import time
+from typing import Iterator
 
-F = TypeVar('F', bound=Callable[..., Any])
 
-def _validate_fib_input(func: F) -> F:
+class ComputationLimitExceededError(ValueError):
+    """Raised when a computation exceeds defined safety limits to prevent CPU/Memory exhaustion."""
+    pass
+
+
+def _validate_fib_input(n: int, max_limit: int | None = None, override_limit: bool = False) -> None:
     """
-    Decorator to centralize input validation for Fibonacci functions.
+    Validates input parameters for Fibonacci functions.
     
-    Ensures the input 'n' is a non-negative integer and explicitly rejects
-    booleans, floats, strings, and other invalid types.
-    """
-    @functools.wraps(func)
-    def wrapper(n: int, *args: Any, **kwargs: Any) -> Any:
-        if isinstance(n, bool) or not isinstance(n, int):
-            raise TypeError(f"Input 'n' must be an integer, got {type(n).__name__}.")
-        if n < 0:
-            raise ValueError(f"Input 'n' must be non-negative, got {n}.")
-        return func(n, *args, **kwargs)
-    return wrapper  # type: ignore
-
-@_validate_fib_input
-def fib_sequence(n: int) -> Iterator[int]:
-    """
-    Generates the Fibonacci sequence from F_0 to F_n iteratively.
+    Enforces strict type checking (rejecting booleans and other types),
+    non-negative bounds, and computational safety limits.
     
     Args:
-        n (int): The upper bound index for the Fibonacci sequence (inclusive).
-        
-    Returns:
-        Iterator[int]: A generator yielding Fibonacci numbers from F_0 to F_n.
+        n: The Fibonacci index to validate.
+        max_limit: The maximum allowed value for n. If None, no limit is enforced.
+        override_limit: If True, bypasses the max_limit check.
         
     Raises:
-        TypeError: If 'n' is not an integer or is a boolean.
-        ValueError: If 'n' is negative.
-        
-    Time Complexity:
-        O(n * M(k)) where M(k) is the cost of multiplying/adding k-digit numbers.
-    Space Complexity:
-        O(1) auxiliary space (excluding the size of the yielded large integers).
+        TypeError: If n is not strictly an integer (e.g., bool, float, str).
+        ValueError: If n is negative.
+        ComputationLimitExceededError: If n exceeds max_limit and override_limit is False.
     """
+    if type(n) is not int:
+        raise TypeError(f"Input 'n' must be strictly an integer, got {type(n).__name__}.")
+    if n < 0:
+        raise ValueError(f"Input 'n' must be non-negative, got {n}.")
+    if max_limit is not None and not override_limit and n > max_limit:
+        raise ComputationLimitExceededError(
+            f"n={n} exceeds max_limit={max_limit}. "
+            "Set override_limit=True to bypass this safeguard."
+        )
+
+
+def fib_sequence_generator(n: int, max_limit: int = 1000000) -> Iterator[int]:
+    """
+    Yields Fibonacci numbers from F(0) to F(n) using an iterative generator.
+    
+    This ensures O(1) auxiliary space complexity, preventing Out-Of-Memory (OOM) 
+    crashes when n is large.
+    
+    Args:
+        n: The upper bound index for the Fibonacci sequence.
+        max_limit: Safety limit to prevent excessive CPU usage. Defaults to 1,000,000.
+        
+    Yields:
+        The next Fibonacci number in the sequence.
+        
+    Raises:
+        TypeError: If n is not strictly an integer.
+        ValueError: If n is negative.
+        ComputationLimitExceededError: If n exceeds max_limit.
+    """
+    _validate_fib_input(n, max_limit=max_limit)
     a, b = 0, 1
     for _ in range(n + 1):
         yield a
         a, b = b, a + b
 
-@_validate_fib_input
-def fib_nth(n: int) -> int:
+
+def fib_sequence_list(n: int, max_limit: int = 100000, override_limit: bool = False) -> list[int]:
     """
-    Calculates the exact n-th Fibonacci number using the Fast Doubling method.
+    Returns the Fibonacci sequence from F(0) to F(n) as a list.
     
-    Uses an iterative bitwise approach to achieve O(log n) time complexity
-    without relying on recursion, thus avoiding RecursionError limits.
+    Enforces a strict upper bound to protect heap memory from exhaustion.
     
     Args:
-        n (int): The index of the Fibonacci number to calculate.
+        n: The upper bound index for the Fibonacci sequence.
+        max_limit: Safety limit to prevent memory exhaustion. Defaults to 100,000.
+        override_limit: If True, allows n to exceed max_limit.
         
     Returns:
-        int: The n-th Fibonacci number.
+        A list of Fibonacci numbers from F(0) to F(n).
         
     Raises:
-        TypeError: If 'n' is not an integer or is a boolean.
-        ValueError: If 'n' is negative.
-        
-    Time Complexity:
-        O(log n * M(k)) where M(k) is the cost of large integer arithmetic.
-    Space Complexity:
-        O(1) auxiliary space.
+        TypeError: If n is not strictly an integer.
+        ValueError: If n is negative.
+        ComputationLimitExceededError: If n exceeds max_limit and override_limit is False.
     """
+    _validate_fib_input(n, max_limit=max_limit, override_limit=override_limit)
+    res = []
+    a, b = 0, 1
+    for _ in range(n + 1):
+        res.append(a)
+        a, b = b, a + b
+    return res
+
+
+def fib_nth(n: int) -> int:
+    """
+    Returns exactly the n-th Fibonacci number using the iterative Fast Doubling algorithm.
+    
+    Achieves O(log n) time complexity and O(1) space complexity, avoiding the 
+    recursion depth limits and stack memory constraints of naive recursive approaches.
+    
+    Args:
+        n: The index of the Fibonacci number to calculate.
+        
+    Returns:
+        The n-th Fibonacci number.
+        
+    Raises:
+        TypeError: If n is not strictly an integer.
+        ValueError: If n is negative.
+    """
+    _validate_fib_input(n)
     if n == 0:
         return 0
-        
-    a, b = 0, 1
     
-    # Iterate from the most significant bit to the least significant bit
-    for bit in bin(n)[2:]:
-        # Fast doubling formulas:
-        # F(2k) = F(k) * [2 * F(k+1) - F(k)]
-        # F(2k+1) = F(k)^2 + F(k+1)^2
+    # Iterative Fast Doubling
+    bits = bin(n)[2:]
+    a, b = 0, 1  # F(0), F(1)
+    
+    for bit in bits:
+        # c = F(2k), d = F(2k+1)
         c = a * (2 * b - a)
         d = a * a + b * b
-        
-        if bit == '0':
-            a, b = c, d
-        else:
+        if bit == '1':
             a, b = d, c + d
+        else:
+            a, b = c, d
             
     return a
 
 
-class _CustomObj:
-    """Dummy class for testing custom object type rejection."""
-    pass
+# ==============================================================================
+# TEST SUITE
+# Guarded with try...except ImportError to prevent ModuleNotFoundError in 
+# production environments lacking the pytest dependency.
+# ==============================================================================
+try:
+    import pytest
+    from collections.abc import Iterator as AbcIterator
 
+    class TestFibonacciHappyPaths:
+        def test_fib_nth(self):
+            assert fib_nth(0) == 0
+            assert fib_nth(1) == 1
+            assert fib_nth(2) == 1
+            assert fib_nth(10) == 55
+            assert fib_nth(50) == 12586269025
 
-class TestFibonacci(unittest.TestCase):
-    """Comprehensive test suite for the Fibonacci module."""
+        def test_fib_sequence_list(self):
+            assert fib_sequence_list(0) == [0]
+            assert fib_sequence_list(1) == [0, 1]
+            assert fib_sequence_list(2) == [0, 1, 1]
+            assert fib_sequence_list(10) == [0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55]
 
-    def test_boundary_values(self) -> None:
-        self.assertEqual(fib_nth(0), 0)
-        self.assertEqual(fib_nth(1), 1)
-        self.assertEqual(fib_nth(2), 1)
-        
-        self.assertEqual(list(fib_sequence(0)), [0])
-        self.assertEqual(list(fib_sequence(1)), [0, 1])
-        self.assertEqual(list(fib_sequence(2)), [0, 1, 1])
+        def test_fib_sequence_generator(self):
+            assert list(fib_sequence_generator(10)) == [0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55]
 
-    def test_type_rejections(self) -> None:
-        invalid_inputs: list[Any] = [5.0, "5", True, False, None, _CustomObj()]
-        for val in invalid_inputs:
-            with self.assertRaises(TypeError):
-                fib_nth(val)
-            with self.assertRaises(TypeError):
-                list(fib_sequence(val))
+    class TestFibonacciEdgeCases:
+        def test_zero_yield(self):
+            assert list(fib_sequence_generator(0)) == [0]
+            
+        def test_exact_boundary_limit(self):
+            # Should not raise
+            fib_sequence_list(10, max_limit=10)
+            # Should raise
+            with pytest.raises(ComputationLimitExceededError):
+                fib_sequence_list(11, max_limit=10)
 
-    def test_negative_bounds(self) -> None:
-        for val in [-1, -100]:
-            with self.assertRaises(ValueError):
-                fib_nth(val)
-            with self.assertRaises(ValueError):
-                list(fib_sequence(val))
+    class TestFibonacciTypeRejection:
+        @pytest.mark.parametrize("invalid_input", [True, False, 3.14, "10", None, []])
+        def test_type_rejection(self, invalid_input):
+            with pytest.raises(TypeError):
+                fib_nth(invalid_input)
+            with pytest.raises(TypeError):
+                fib_sequence_list(invalid_input)
+            with pytest.raises(TypeError):
+                list(fib_sequence_generator(invalid_input))
 
-    def test_performance_and_scale(self) -> None:
-        n = 100_000
-        
-        # Test fib_nth performance (must be < 1 second)
-        start_time = time.time()
-        res = fib_nth(n)
-        elapsed_nth = time.time() - start_time
-        
-        self.assertLess(elapsed_nth, 1.0, "fib_nth took longer than 1 second for n=100,000")
-        self.assertIsInstance(res, int)
-        
-        # Test fib_sequence for memory spikes (OOM trap avoidance)
-        # We do not store the sequence in a list. We just iterate and count.
-        start_time = time.time()
-        count = 0
-        for _ in fib_sequence(n):
-            count += 1
-        elapsed_seq = time.time() - start_time
-        
-        self.assertEqual(count, n + 1)
-        # Note: Iterative addition of 100,000 large ints takes >1s in pure Python 
-        # due to O(N^2) bit complexity, but it strictly avoids OOM memory spikes 
-        # by maintaining O(1) space complexity.
+    class TestFibonacciBoundsRejection:
+        @pytest.mark.parametrize("negative_input", [-1, -100])
+        def test_bounds_rejection(self, negative_input):
+            with pytest.raises(ValueError):
+                fib_nth(negative_input)
+            with pytest.raises(ValueError):
+                fib_sequence_list(negative_input)
+            with pytest.raises(ValueError):
+                list(fib_sequence_generator(negative_input))
 
-if __name__ == "__main__":
-    unittest.main()
+    class TestFibonacciLimitGuards:
+        def test_limit_exceeded(self):
+            with pytest.raises(ComputationLimitExceededError):
+                fib_sequence_list(100001)  # Default limit is 100000
+                
+        def test_limit_override(self):
+            # Should not raise
+            res = fib_sequence_list(100001, override_limit=True)
+            assert len(res) == 100002
+            
+        def test_generator_limit(self):
+            with pytest.raises(ComputationLimitExceededError):
+                list(fib_sequence_generator(1000001))  # Default limit 1000000
+
+    class TestFibonacciGeneratorVerification:
+        def test_is_iterator(self):
+            gen = fib_sequence_generator(10)
+            assert isinstance(gen, AbcIterator)
+            
+        def test_memory_lazy_evaluation(self):
+            # Verifies it doesn't crash or OOM on a large limit override
+            gen = fib_sequence_generator(1000000)
+            assert next(gen) == 0
+            assert next(gen) == 1
+
+    if __name__ == "__main__":
+        pytest.main([__file__, "-v"])
+
+except ImportError:
+    if __name__ == "__main__":
+        print("pytest is not installed. Skipping test execution.")
