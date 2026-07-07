@@ -1,365 +1,242 @@
 # orchestrator.py
 import json
+import re
 import logging
 from typing import Generator, Dict, Any, Optional
-from config.settings import settings
+from config.settings import settings, get_llm_client
 from sandbox import run_in_sandbox, parse_stderr
 from swarm.agents import create_swarm_agents, create_agent, extract_code_from_markdown
-from swarm.guardrails import check_input_guardrail, sanitize_file_path
+from swarm.guardrails import guard_prompt, sanitize_file_path
 
 logger = logging.getLogger(__name__)
 
+# ==============================================================================
+# 🛡️ ROBUST QA JSON PARSER (Fixes JSON Parsing Vulnerability)
+# ==============================================================================
+def parse_qa_feedback(raw_text: str) -> Dict[str, Any]:
+    """
+    Robustly parses the QA Analyst's response into a structured dictionary.
+    Handles markdown wrapping, conversational text, and malformed JSON to prevent 
+    infinite retry loops caused by LLM formatting quirks.
+    """
+    if not raw_text:
+        return {"status": "FAIL", "error_summary": "Empty QA response", "failed_component": "Unknown", "remediation_hint": "No feedback provided."}
+
+    # 1. Try direct parsing
+    try:
+        return json.loads(raw_text)
+    except json.JSONDecodeError:
+        pass
+
+    # 2. Extract from markdown blocks (```json ... ```)
+    json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_text, re.DOTALL)
+    if json_match:
+        try:
+            return json.loads(json_match.group(1))
+        except json.JSONDecodeError:
+            pass
+
+    # 3. Extract by finding the first '{' and last '}'
+    start_idx = raw_text.find('{')
+    end_idx = raw_text.rfind('}')
+    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+        try:
+            return json.loads(raw_text[start_idx:end_idx+1])
+        except json.JSONDecodeError:
+            pass
+
+    # 4. Heuristic Fallback (If all parsing fails, analyze text sentiment)
+    logger.warning(f"QA JSON parsing failed. Using heuristic fallback. Raw text: {raw_text[:150]}...")
+    lower_text = raw_text.lower()
+    
+    is_pass = any(word in lower_text for word in ["success", "passed", "looks good", "no errors", "perfect", "correct"])
+    is_fail = any(word in lower_text for word in ["error", "failed", "exception", "fix", "bug", "traceback"])
+
+    lines = raw_text.strip().split('\n')
+    error_summary = lines[-1] if lines else "Unknown error"
+
+    if is_pass and not is_fail:
+        return {
+            "status": "PASS",
+            "error_summary": "None",
+            "failed_component": "None",
+            "remediation_hint": "Code looks good based on heuristic analysis."
+        }
+    else:
+        return {
+            "status": "FAIL",
+            "error_summary": f"QA parsing failed, raw feedback: {error_summary[:100]}",
+            "failed_component": "Unknown",
+            "remediation_hint": "Review the raw QA feedback and fix potential issues."
+        }
+
 
 class QwenDevSwarmOrchestrator:
-    def __init__(self, max_retries: int = 3):
+    def __init__(self, max_retries: int = 3, require_approval: bool = True):
         """
-        Initializes the central multi-agent orchestrator with dynamic meta-prompt capabilities.
+        Initializes the central multi-agent orchestrator.
         
         Args:
-            max_retries: Hard limit for self-correction loops to protect token budgets.
+            max_retries: Hard limit for self-correction loops.
+            require_approval: If True, mandates human review before ANY code execution.
         """
         self.max_retries = max_retries
+        self.require_approval = require_approval # 🛡️ CRITICAL SECURITY FLAG
         
-        # Internal backing variable for secure path tracking
         self._file_path = "generated_script.py"
-        
-        # Central JSON core state schema tracking the current task and history
         self.state = {
-            "current_blueprint": "",  # Empty by default; set via set_blueprint()
+            "current_blueprint": "",
             "file_path": self._file_path,
             "model_in_use": getattr(settings, "MODEL_NAME", "qwen3.7-max"),
             "history": []
         }
         
-        # Initialize the official Qwen Swarm Crew
         self.swarm = create_swarm_agents()
-        
-        # Cache for compiled prompts to avoid redundant regeneration
         self._compiled_prompt_cache: Dict[str, str] = {}
 
-    # ─────────────────────────────────────────────────────────────
-    # 🛡️ DYNAMIC TOOL ARGUMENT GUARDRAIL PROPERTY
-    # ─────────────────────────────────────────────────────────────
     @property
     def file_path(self) -> str:
-        """Returns the secured internal file system string target."""
         return self._file_path
 
     @file_path.setter
     def file_path(self, value: str):
-        """Intercepts, logs, and sanitizes dangerous path mutations dynamically."""
         self._file_path = sanitize_file_path(value)
         self.state["file_path"] = self._file_path
 
-    # ─────────────────────────────────────────────────────────────
-    # 📋 BLUEPRINT MANAGEMENT
-    # ─────────────────────────────────────────────────────────────
     def set_blueprint(self, blueprint: str) -> None:
-        """
-        Sets the current task blueprint with guardrail validation.
-        Invalidates the compiled prompt cache to force regeneration.
-        """
-        if check_input_guardrail(blueprint):
-            raise ValueError("🚨 Security Guardrail: Malicious pattern detected in blueprint.")
+        client = get_llm_client()
+        guard_result = guard_prompt(blueprint, client=client, use_semantic_guard=True)
+        
+        if guard_result["blocked"]:
+            raise ValueError(f"🚨 Security Guardrail: {guard_result['reason']}")
         
         self.state["current_blueprint"] = blueprint
-        # Invalidate cache so the next run regenerates the meta-prompt
         self._compiled_prompt_cache.pop(blueprint, None)
 
-    # ─────────────────────────────────────────────────────────────
-    # 🧠 META-PROMPT GENERATION (Cached)
-    # ─────────────────────────────────────────────────────────────
     def run_autonomous_generation(self, user_feature_request: str) -> str:
-        """
-        Executes an upstream meta-prompt generation pass to dynamically construct
-        a hyper-hardened Lead Coder instance tailored explicitly to the request.
-        Results are cached to avoid redundant regeneration.
-        """
-        # Check cache first
         if user_feature_request in self._compiled_prompt_cache:
-            logger.info("Using cached compiled prompt for blueprint.")
-            compiled_prompt = self._compiled_prompt_cache[user_feature_request]
-        else:
-            # Phase 1: Generate the hyper-focused system prompt via the Prompt Engineer Agent
-            meta_prompt_response = self.swarm["prompt_engineer"].call_llm(
-                f"Generate a comprehensive, hardened system prompt to build this feature: {user_feature_request}"
-            )
-            compiled_prompt = meta_prompt_response
-            self._compiled_prompt_cache[user_feature_request] = compiled_prompt
-        
-        # Phase 2: Instantiate or update the coder dynamically using the compiled prompt
-        dynamic_coder = create_agent(
-            name="Dynamic_Lead_Coder",
-            instructions=compiled_prompt
+            return self._compiled_prompt_cache[user_feature_request]
+            
+        meta_prompt_response = self.swarm["prompt_engineer"].call_llm(
+            f"Generate a comprehensive, hardened system prompt to build this feature: {user_feature_request}"
         )
+        self._compiled_prompt_cache[user_feature_request] = meta_prompt_response
         
-        # Hot-swap the standard coder inside our active registry
+        dynamic_coder = create_agent(name="Dynamic_Lead_Coder", instructions=meta_prompt_response)
         self.swarm["coder"] = dynamic_coder
-        return compiled_prompt
+        return meta_prompt_response
 
-    # ─────────────────────────────────────────────────────────────
-    # 🔄 SELF-CORRECTION LOOP
-    # ─────────────────────────────────────────────────────────────
-    def execute_self_correction_loop(self, human_hint: Optional[str] = None) -> Generator[Dict[str, Any], None, None]:
+    def execute_self_correction_loop(
+        self, 
+        human_hint: Optional[str] = None, 
+        approved_code: Optional[str] = None
+    ) -> Generator[Dict[str, Any], None, None]:
         """
-        Manages the custom loop sequence of agent turns to fix runtime bugs iteratively.
-        Accepts an optional human_hint parameter from the UI to steer correction trajectories.
-        Yields structured payload state updates dynamically to feed the frontend interface.
+        Manages the self-correction loop.
+        
+        Args:
+            human_hint: Provided by user if they rejected the previous code.
+            approved_code: Provided by user if they approved the generated code. 
+                           If provided, skips generation and goes straight to sandbox.
         """
-        # Validate that a blueprint has been set
         if not self.state.get("current_blueprint"):
-            yield {
-                "event": "system_start",
-                "status": "FAILED",
-                "active_agent": "System",
-                "message": "No blueprint set. Call set_blueprint() before running the loop.",
-                "retry_count": 0,
-                "core_state": self.state
-            }
+            yield {"event": "system_start", "status": "FAILED", "active_agent": "System", "message": "No blueprint set."}
             return
 
         retry_count = 0
         qa_feedback = None
 
-        # Turning Point 1: System Startup Initialization Update
-        yield {
-            "event": "system_start",
-            "status": "RUNNING",
-            "active_agent": "System",
-            "message": "Initializing Qwen-DevSwarm Self-Correction Loop...",
-            "retry_count": retry_count,
-            "core_state": self.state
-        }
+        yield {"event": "system_start", "status": "RUNNING", "active_agent": "System", "message": "Initializing Swarm..."}
 
-        # ─────────────────────────────────────────────────────────────
-        # 🛡️ HARDENED APPLICATION GUARDRAILS
-        # ─────────────────────────────────────────────────────────────
-        is_hint_malicious = human_hint and check_input_guardrail(human_hint)
-        is_blueprint_malicious = check_input_guardrail(self.state["current_blueprint"])
+        # Guardrails check
+        client = get_llm_client()
+        hint_guard = {"blocked": False}
+        if human_hint:
+            hint_guard = guard_prompt(human_hint, client=client, use_semantic_guard=True)
+        blueprint_guard = guard_prompt(self.state["current_blueprint"], client=client, use_semantic_guard=True)
 
-        if is_hint_malicious or is_blueprint_malicious:
-            yield {
-                "event": "security_blocked",
-                "status": "FAILED",
-                "active_agent": "System",
-                "message": "Security Guardrail Blocked: Malicious prompt pattern detected in input scope.",
-                "retry_count": retry_count,
-                "core_state": self.state
-            }
+        if hint_guard["blocked"] or blueprint_guard["blocked"]:
+            reason = hint_guard["reason"] if hint_guard["blocked"] else blueprint_guard["reason"]
+            yield {"event": "security_blocked", "status": "FAILED", "active_agent": "System", "message": f"Blocked: {reason}"}
             return
 
-        # ─────────────────────────────────────────────────────────────
-        # 🧠 META-PROMPT SYNTHESIS (Cached)
-        # ─────────────────────────────────────────────────────────────
-        yield {
-            "event": "meta_prompt_start",
-            "status": "RUNNING",
-            "active_agent": "Prompt_Engineer_Agent",
-            "message": "Prompt Engineer is synthesizing an adversarial, hardened specification prompt...",
-            "retry_count": retry_count
-        }
-        
-        compiled_blueprint = self.run_autonomous_generation(self.state["current_blueprint"])
+        # Meta-prompt synthesis (only needed if we aren't resuming with approved code)
+        if not approved_code:
+            yield {"event": "meta_prompt_start", "status": "RUNNING", "active_agent": "Prompt_Engineer_Agent", "message": "Synthesizing prompt..."}
+            self.run_autonomous_generation(self.state["current_blueprint"])
 
-        yield {
-            "event": "meta_prompt_compiled",
-            "status": "RUNNING",
-            "active_agent": "Prompt_Engineer_Agent",
-            "message": "Dynamic specifications compiled. Spawning Dynamic_Lead_Coder.",
-            "retry_count": retry_count,
-            "compiled_prompt": compiled_blueprint
-        }
-
-        # ─────────────────────────────────────────────────────────────
-        # 🔄 MAIN CORRECTION LOOP
-        # ─────────────────────────────────────────────────────────────
         while retry_count < self.max_retries:
             
-            # Step 1: Formulate prompts for the dynamic Lead Coder
-            if human_hint and retry_count == 0:
-                user_prompt = (
-                    f"The user has provided a critical implementation hint to correct the previous strategy.\n\n"
-                    f"💡 Human Engineer Hint: {human_hint}\n"
-                    f"📋 Original Target Blueprint: {self.state['current_blueprint']}\n\n"
-                    f"Please output a clean, rewritten version of the full Python script taking this hint into account."
-                )
-            elif qa_feedback and qa_feedback.get("status") == "FAIL":
-                user_prompt = (
-                    f"Your previous code attempt failed execution. Review the feedback below and fix the script.\n\n"
-                    f"❌ Error Summary: {qa_feedback.get('error_summary')}\n"
-                    f"📍 Failed File/Lines: {qa_feedback.get('failed_component')}\n"
-                    f"💡 Remediation Hint: {qa_feedback.get('remediation_hint')}\n\n"
-                    f"Please output a clean, rewritten version of the full Python script fixing the issue."
-                )
+            # ─────────────────────────────────────────────────────────────
+            # ️ MANDATORY HUMAN APPROVAL CHECKPOINT
+            # ─────────────────────────────────────────────────────────────
+            if approved_code:
+                # User approved the code, use it directly and skip generation
+                clean_code = approved_code
+                yield {"event": "approval_received", "status": "RUNNING", "active_agent": "Human", "message": "Human approved code. Proceeding to sandbox execution."}
+                approved_code = None # Clear it so we don't skip generation on subsequent retries
             else:
-                user_prompt = (
-                    f"Implement the requested script following your instructions exactly "
-                    f"based on this context: {self.state['current_blueprint']}"
-                )
+                # Standard Generation Phase
+                if human_hint and retry_count == 0:
+                    user_prompt = f"Human Hint: {human_hint}\nBlueprint: {self.state['current_blueprint']}\nRewrite script."
+                elif qa_feedback and qa_feedback.get("status") == "FAIL":
+                    user_prompt = f"Error: {qa_feedback.get('error_summary')}\nHint: {qa_feedback.get('remediation_hint')}\nFix script."
+                else:
+                    user_prompt = f"Implement script based on: {self.state['current_blueprint']}"
+                    
+                yield {"event": "agent_start", "status": "RUNNING", "active_agent": "Dynamic_Lead_Coder", "message": "Generating code..."}
                 
-            # Turning Point 2: Broadcast Lead Coder Invocation Event
-            yield {
-                "event": "agent_start",
-                "status": "RUNNING",
-                "active_agent": "Dynamic_Lead_Coder",
-                "message": f"[Turn {retry_count + 1}] Dynamic Lead Coder is generating Python source code...",
-                "retry_count": retry_count,
-                "prompt_context": user_prompt
-            }
-            
-            # 1. Collect the streamed response
-            collected_response_text = ""
-            
-            for stream_chunk in self.swarm["coder"].call_llm_stream(user_prompt):
-                yield stream_chunk
-                if stream_chunk.get("type") == "content":
-                    collected_response_text += stream_chunk.get("text", "")
+                collected_response_text = ""
+                for stream_chunk in self.swarm["coder"].call_llm_stream(user_prompt):
+                    yield stream_chunk
+                    if stream_chunk.get("type") == "content":
+                        collected_response_text += stream_chunk.get("text", "")
 
-            # 2. 🛡️ CRITICAL FIX: Extract clean code from markdown before writing to disk
-            clean_code = extract_code_from_markdown(collected_response_text)
-            
-            if clean_code:
-                with open(self.file_path, "w") as f:
-                    f.write(clean_code)
-            else:
-                # Fallback if the model returned no parseable code
-                logger.warning("Coder returned no parseable code. Using empty file.")
-                with open(self.file_path, "w") as f:
-                    f.write("# ERROR: No code generated by the model.\n")
-                clean_code = "# ERROR: No code generated by the model.\n"
-            
-            # Turning Point 3: Disk Compilation Confirmation Update
-            yield {
-                "event": "code_compiled",
-                "status": "RUNNING",
-                "active_agent": "Dynamic_Lead_Coder",
-                "message": f"Code successfully compiled to disk at: '{self.file_path}'",
-                "retry_count": retry_count,
-                "generated_code": clean_code
-            }
+                clean_code = extract_code_from_markdown(collected_response_text)
+                if not clean_code:
+                    clean_code = "# ERROR: No code generated.\n"
+
+                #  CRITICAL SECURITY PAUSE: If approval is required, stop here.
+                if self.require_approval:
+                    yield {
+                        "event": "await_human_approval",
+                        "status": "PAUSED",
+                        "active_agent": "Human",
+                        "message": "Code generated. Awaiting mandatory human review before execution.",
+                        "generated_code": clean_code,
+                        "retry_count": retry_count
+                    }
+                    return # Stop the generator. UI will handle the resume.
 
             # ─────────────────────────────────────────────────────────────
-            # 🏗️ SANDBOX EXECUTION
+            # 🏗️ SANDBOX EXECUTION (Only reached if approved or approval disabled)
             # ─────────────────────────────────────────────────────────────
-            yield {
-                "event": "sandbox_start",
-                "status": "RUNNING",
-                "active_agent": "Sandbox",
-                "message": "Running script under isolated sandbox subprocess monitor...",
-                "retry_count": retry_count
-            }
-            
+            with open(self.file_path, "w") as f:
+                f.write(clean_code)
+                
+            yield {"event": "sandbox_start", "status": "RUNNING", "active_agent": "Sandbox", "message": "Executing in Docker sandbox..."}
             execution_result = run_in_sandbox(self.file_path, timeout=10.0)
 
-            # Case A: Code ran perfectly with zero exceptions!
             if execution_result["exit_code"] == 0:
-                self.state["history"].append({
-                    "turn": retry_count,
-                    "status": "PASS",
-                    "stdout": execution_result["stdout"]
-                })
-                
-                yield {
-                    "event": "execution_success",
-                    "status": "COMPLETED",
-                    "active_agent": "System",
-                    "message": "Success! Code executed with zero runtime errors. Verified safe for production.",
-                    "retry_count": retry_count,
-                    "stdout": execution_result["stdout"],
-                    "core_state": self.state
-                }
+                yield {"event": "execution_success", "status": "COMPLETED", "active_agent": "System", "message": "Success!", "stdout": execution_result["stdout"]}
                 break
 
-            # Case B: Runtime Error detected.
+            # Handle Failure
             clean_error = parse_stderr(execution_result["stderr"])
+            yield {"event": "sandbox_fail", "status": "RUNNING", "active_agent": "Sandbox", "message": "Execution failed.", "raw_traceback": clean_error}
             
-            yield {
-                "event": "sandbox_fail",
-                "status": "RUNNING",
-                "active_agent": "Sandbox",
-                "message": f"Sandbox Flagged Error! Exit Code: {execution_result['exit_code']}",
-                "retry_count": retry_count,
-                "raw_traceback": clean_error
-            }
-            
-            # ─────────────────────────────────────────────────────────────
-            # 🕵️ QA ANALYST CRITIQUE (FIXED: Single call, stream + parse)
-            # ─────────────────────────────────────────────────────────────
-            qa_prompt = (
-                f"The generated code crashed during localized testing.\n\n"
-                f"--- Subprocess Source Code File ---\n{clean_code}\n\n"
-                f"--- Clean Traceback from Sandbox Parser ---\n{clean_error}"
-            )
-            
-            yield {
-                "event": "agent_start",
-                "status": "RUNNING",
-                "active_agent": "QA_Analyst",
-                "message": "Evaluating error context and writing remediation structural schema...",
-                "retry_count": retry_count,
-                "prompt_context": qa_prompt
-            }
-            
-            # 🛡️ CRITICAL FIX: Stream the QA response AND collect content tokens for JSON parsing
-            # This eliminates the redundant second API call.
+            qa_prompt = f"Code:\n{clean_code}\n\nError:\n{clean_error}"
             qa_collected_text = ""
             for stream_chunk in self.swarm["qa_analyst"].call_llm_stream(qa_prompt, require_json=True):
                 yield stream_chunk
                 if stream_chunk.get("type") == "content":
                     qa_collected_text += stream_chunk.get("text", "")
 
-            # Parse the collected stream content as JSON
-            try:
-                qa_feedback = json.loads(qa_collected_text)
-            except json.JSONDecodeError:
-                logger.warning(f"QA Analyst returned invalid JSON. Raw output: {qa_collected_text[:200]}")
-                qa_feedback = {
-                    "status": "FAIL",
-                    "error_summary": "QA Analyst returned unparseable JSON response",
-                    "failed_component": self.file_path,
-                    "remediation_hint": "Review code compliance syntax errors highlighted by the compiler logs."
-                }
+            # 🛡️ REPLACED: Use the robust multi-stage parser instead of raw json.loads()
+            qa_feedback = parse_qa_feedback(qa_collected_text)
 
-            # Track iteration step log metadata state 
-            self.state["history"].append({
-                "turn": retry_count,
-                "status": "FAIL",
-                "error": qa_feedback.get("error_summary")
-            })
-            
-            yield {
-                "event": "qa_complete",
-                "status": "RUNNING",
-                "active_agent": "QA_Analyst",
-                "message": "QA Feedback parsed successfully. Advancing loop retry token structure.",
-                "retry_count": retry_count,
-                "qa_feedback": qa_feedback,
-                "core_state": self.state
-            }
-            
-            # Clean human hint override parameter so downstream automatic cycles don't get trapped repeating it
-            human_hint = None
+            human_hint = None # Clear hint for next loop
             retry_count += 1
 
-        # Final loop verification guardrail: Budget Exhausted -> Yield HITL Handoff Request
-        if retry_count == self.max_retries and (not qa_feedback or qa_feedback.get("status") == "FAIL"):
-            yield {
-                "event": "hitl_paused",
-                "status": "PAUSED",
-                "active_agent": "System",
-                "message": "GUARDRAIL TRIGGERED: Exhausted retry budget allocation ceiling.",
-                "retry_count": retry_count,
-                "core_state": self.state
-            }
-
-
-if __name__ == "__main__":
-    # uv run terminal execution block
-    orchestrator = QwenDevSwarmOrchestrator(max_retries=3)
-    
-    # Set the blueprint before running the loop
-    orchestrator.set_blueprint("Create a robust python script that calculates Fibonacci numbers up to n.")
-    
-    for state_update in orchestrator.execute_self_correction_loop():
-        if "event" in state_update:
-            print(f"📡 Terminal Monitored Transition: {state_update['event']} ({state_update['active_agent']})")
+        if retry_count == self.max_retries:
+            yield {"event": "hitl_paused", "status": "PAUSED", "active_agent": "System", "message": "Max retries reached."}

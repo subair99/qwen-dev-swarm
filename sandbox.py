@@ -1,68 +1,22 @@
-# sandbox.py
 import os
 import subprocess
-import sys
+import shutil
+import tempfile
+import logging
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
-# Conditionally import resource module to maintain clean platform independence
-try:
-    import resource
-except ImportError:
-    resource = None
-
-# Environment variables to exclude from the sandbox
-_BLOCKED_ENV_VARS = {
-    "QWEN_API_KEY",
-    "DASHSCOPE_API_KEY",
-    "OPENAI_API_KEY",
-    "ANTHROPIC_API_KEY",
-    "AWS_ACCESS_KEY_ID",
-    "AWS_SECRET_ACCESS_KEY",
-    "DATABASE_URL",
-    "SECRET_KEY",
-}
+# Setup logger for the sandbox module
+logger = logging.getLogger(__name__)
 
 
-def _set_sandbox_limits(max_mem_bytes: int, max_cpu_seconds: int, max_file_size_bytes: int):
-    """
-    Child process pre-execution hook to restrict runtime operating limits.
-    Executes directly inside the child context before dropping into execve().
-    
-    WARNING: This function is not safe in multi-threaded applications.
-    See Python docs for subprocess.preexec_fn.
-    """
-    if resource is None:
-        return
-        
-    try:
-        # Enforce hard/soft limit restrictions on Virtual Memory Address Space (RLIMIT_AS)
-        resource.setrlimit(resource.RLIMIT_AS, (max_mem_bytes, max_mem_bytes))
-        
-        # CPU time limit (prevents infinite loops from consuming CPU forever)
-        resource.setrlimit(resource.RLIMIT_CPU, (max_cpu_seconds, max_cpu_seconds))
-        
-        # File size limit (prevents disk exhaustion)
-        resource.setrlimit(resource.RLIMIT_FSIZE, (max_file_size_bytes, max_file_size_bytes))
-        
-        # Process count limit (prevents fork bombs)
-        resource.setrlimit(resource.RLIMIT_NPROC, (64, 64))
-        
-    except Exception as e:
-        # Graceful degraded fallback if kernel permissions restrict modifications
-        pass
-
-
-def _sanitize_environment() -> Dict[str, str]:
-    """
-    Creates a sanitized environment dictionary with sensitive variables removed.
-    Prevents data exfiltration of API keys and secrets.
-    """
-    sanitized_env = {}
-    for key, value in os.environ.items():
-        if key not in _BLOCKED_ENV_VARS:
-            sanitized_env[key] = value
-    return sanitized_env
+def check_docker_installed():
+    """Ensure Docker is available on the host system."""
+    if shutil.which("docker") is None:
+        raise EnvironmentError(
+            "Docker is required for secure sandbox execution. "
+            "Please install Docker Desktop or Docker Engine."
+        )
 
 
 def run_in_sandbox(
@@ -72,17 +26,20 @@ def run_in_sandbox(
     max_output_bytes: int = 1_000_000  # 1MB limit on stdout/stderr
 ) -> Dict[str, Any]:
     """
-    Executes a script in an isolated local subprocess sandbox with strict resource bounds.
+    Executes a script in a strictly isolated Docker container.
     
-    SECURITY LIMITATIONS:
-    - This sandbox provides basic resource limiting but NOT full isolation.
-    - The script still has access to the file system and network.
-    - For production use with untrusted code, use Docker containers or WebAssembly.
+    SECURITY FEATURES:
+    - True OS-level isolation via Docker namespaces and cgroups.
+    - Network disabled (prevents data exfiltration).
+    - Read-only root filesystem.
+    - Non-root user execution.
+    - Strict resource limits (memory, CPU, PIDs).
+    - Environment variables are NOT inherited from the host (implicit sanitization).
     
     Args:
         script_path: The path to the Python script or command file to run.
         timeout: Maximum execution time in seconds to prevent infinite loops.
-        max_memory_mb: RAM limit in megabytes before process termination triggers.
+        max_memory_mb: RAM limit in megabytes (mapped to Docker --memory flag).
         max_output_bytes: Maximum size of stdout/stderr to capture (prevents memory exhaustion).
         
     Returns:
@@ -97,41 +54,51 @@ def run_in_sandbox(
             "status": "FILE_NOT_FOUND"
         }
 
-    # Ensure we use the current uv/virtual environment executable if available
-    python_executable = sys.executable
-    max_mem_bytes = max_memory_mb * 1024 * 1024
-    max_cpu_seconds = int(timeout) + 2  # Give 2s grace period for cleanup
-    max_file_size_bytes = 10 * 1024 * 1024  # 10MB file size limit
-
-    # Determine structural keyword args based on OS compatibility flags
-    kwargs: Dict[str, Any] = {
-        "capture_output": True,
-        "text": True,
-        "timeout": timeout,
-        "stdin": subprocess.DEVNULL,  # Prevent hanging on input() calls
-        "env": _sanitize_environment(),  # Remove sensitive environment variables
-    }
-
-    # Assign preexec_fn process limit hook only on POSIX systems (Linux/macOS)
-    if os.name != "nt":
-        # Use a proper function reference, not a lambda, to avoid closure issues
-        def preexec_hook():
-            _set_sandbox_limits(max_mem_bytes, max_cpu_seconds, max_file_size_bytes)
-        kwargs["preexec_fn"] = preexec_hook
-
+    check_docker_installed()
+    
+    # 1. Prepare an isolated temporary workspace
+    workspace_dir = tempfile.mkdtemp(prefix="qwen_sandbox_")
+    script_name = os.path.basename(path)
+    target_path = os.path.join(workspace_dir, script_name)
+    
+    # Copy the generated script to the workspace
+    shutil.copy(path, target_path)
+    
+    # 2. Define Docker run command with strict security flags
+    # Map max_memory_mb to Docker memory limit format (e.g., "256m")
+    mem_limit = f"{max_memory_mb}m"
+    
+    docker_cmd = [
+        "docker", "run",
+        "--rm",                     # Auto-remove container after execution
+        "--network", "none",        # 🛑 CRITICAL: Disable network (prevents data exfiltration)
+        "--read-only",              # 🛑 CRITICAL: Read-only root filesystem
+        "--security-opt", "no-new-privileges", # Prevent privilege escalation
+        "--tmpfs", "/tmp:noexec,size=128M", # Writable space for /tmp only, no execution
+        "--memory", mem_limit,      # Limit RAM (e.g., 256m)
+        "--cpus", "1.0",            # Limit to 1 CPU core
+        "--pids-limit", "64",       # Prevent fork bombs
+        "--user", "1000:1000",      # Run as non-root user defined in Dockerfile
+        "-v", f"{workspace_dir}:/workspace:ro", # Mount code as READ-ONLY
+        "qwen-dev-swarm-sandbox:latest", # The image name we will build
+        "python", f"/workspace/{script_name}"
+    ]
+    
     try:
-        # Run the script securely, capturing all standard outputs under active resource guard
+        logger.info(f"Executing {script_name} in isolated Docker sandbox...")
         result = subprocess.run(
-            [python_executable, str(path)],
-            **kwargs
+            docker_cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout + 3.0 # Add 3s buffer for container startup time
         )
         
         # Truncate output if it exceeds the limit (prevents memory exhaustion)
         stdout = result.stdout[:max_output_bytes] if result.stdout else ""
         stderr = result.stderr[:max_output_bytes] if result.stderr else ""
         
-        # Check if process crashed due to memory limits (Exit code 137 or MemoryError string)
-        is_mem_err = "MemoryError" in stderr or result.returncode == -9 or result.returncode == 137
+        # Check if process crashed due to memory limits (OOMKilled in Docker usually returns 137)
+        is_mem_err = "MemoryError" in stderr or result.returncode == 137 or "OOM" in stderr
         status_flag = "MEMORY_EXHAUSTED" if is_mem_err else ("SUCCESS" if result.returncode == 0 else "RUNTIME_ERROR")
         
         return {
@@ -140,9 +107,10 @@ def run_in_sandbox(
             "stderr": stderr,
             "status": status_flag
         }
-
+        
     except subprocess.TimeoutExpired as e:
         # Prevent runaway agent loops from stalling orchestrator core execution threads
+        logger.warning(f"Sandbox execution timed out after {timeout} seconds.")
         stdout = (e.stdout or "")[:max_output_bytes]
         stderr = f"Execution timed out after {timeout} seconds."
         return {
@@ -152,12 +120,16 @@ def run_in_sandbox(
             "status": "TIMEOUT"
         }
     except Exception as e:
+        logger.error(f"Sandbox execution failed: {e}")
         return {
             "exit_code": -1,
             "stdout": "",
             "stderr": f"An unexpected sandbox error occurred: {str(e)}",
             "status": "SANDBOX_EXCEPTION"
         }
+    finally:
+        # 3. Clean up workspace
+        shutil.rmtree(workspace_dir, ignore_errors=True)
 
 
 def parse_stderr(stderr_content: str, max_lines: int = 50) -> str:
