@@ -1,4 +1,5 @@
 # orchestrator.py
+import os
 import json
 import re
 import logging
@@ -16,19 +17,15 @@ logger = logging.getLogger(__name__)
 def parse_qa_feedback(raw_text: str) -> Dict[str, Any]:
     """
     Robustly parses the QA Analyst's response into a structured dictionary.
-    Handles markdown wrapping, conversational text, and malformed JSON to prevent 
-    infinite retry loops caused by LLM formatting quirks.
     """
     if not raw_text:
         return {"status": "FAIL", "error_summary": "Empty QA response", "failed_component": "Unknown", "remediation_hint": "No feedback provided."}
 
-    # 1. Try direct parsing
     try:
         return json.loads(raw_text)
     except json.JSONDecodeError:
         pass
 
-    # 2. Extract from markdown blocks (```json ... ```)
     json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_text, re.DOTALL)
     if json_match:
         try:
@@ -36,7 +33,6 @@ def parse_qa_feedback(raw_text: str) -> Dict[str, Any]:
         except json.JSONDecodeError:
             pass
 
-    # 3. Extract by finding the first '{' and last '}'
     start_idx = raw_text.find('{')
     end_idx = raw_text.rfind('}')
     if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
@@ -45,7 +41,6 @@ def parse_qa_feedback(raw_text: str) -> Dict[str, Any]:
         except json.JSONDecodeError:
             pass
 
-    # 4. Heuristic Fallback (If all parsing fails, analyze text sentiment)
     logger.warning(f"QA JSON parsing failed. Using heuristic fallback. Raw text: {raw_text[:150]}...")
     lower_text = raw_text.lower()
     
@@ -73,22 +68,22 @@ def parse_qa_feedback(raw_text: str) -> Dict[str, Any]:
 
 class QwenDevSwarmOrchestrator:
     def __init__(self, max_retries: int = 3, require_approval: bool = True):
-        """
-        Initializes the central multi-agent orchestrator.
-        
-        Args:
-            max_retries: Hard limit for self-correction loops.
-            require_approval: If True, mandates human review before ANY code execution.
-        """
         self.max_retries = max_retries
-        self.require_approval = require_approval # 🛡️ CRITICAL SECURITY FLAG
+        self.require_approval = require_approval 
         
         self._file_path = "generated_script.py"
         self.state = {
             "current_blueprint": "",
             "file_path": self._file_path,
             "model_in_use": getattr(settings, "MODEL_NAME", "qwen3.7-max"),
-            "history": []
+            "history": [],
+            # 🛡️ PERSISTENT STATE FOR LOOP RESUMPTION
+            "is_paused": False,
+            "retry_count": 0,
+            "clean_code": "",
+            "generated_tests": "",
+            "qa_feedback": None,
+            "skip_tests": False
         }
         
         self.swarm = create_swarm_agents()
@@ -133,18 +128,19 @@ class QwenDevSwarmOrchestrator:
     ) -> Generator[Dict[str, Any], None, None]:
         """
         Manages the self-correction loop.
-        
-        Args:
-            human_hint: Provided by user if they rejected the previous code.
-            approved_code: Provided by user if they approved the generated code. 
-                           If provided, skips generation and goes straight to sandbox.
         """
         if not self.state.get("current_blueprint"):
             yield {"event": "system_start", "status": "FAILED", "active_agent": "System", "message": "No blueprint set."}
             return
 
-        retry_count = 0
-        qa_feedback = None
+        # Initialize variables
+        retry_count = self.state.get("retry_count", 0)
+        qa_feedback = self.state.get("qa_feedback", None)
+        clean_code = self.state.get("clean_code", "")
+        generated_tests = self.state.get("generated_tests", "")
+        skip_tests = self.state.get("skip_tests", False)
+
+        print(f"\n[ORCHESTRATOR] Starting loop. retry_count={retry_count}, approved_code={bool(approved_code)}")
 
         yield {"event": "system_start", "status": "RUNNING", "active_agent": "System", "message": "Initializing Swarm..."}
 
@@ -160,23 +156,69 @@ class QwenDevSwarmOrchestrator:
             yield {"event": "security_blocked", "status": "FAILED", "active_agent": "System", "message": f"Blocked: {reason}"}
             return
 
-        # Meta-prompt synthesis (only needed if we aren't resuming with approved code)
         if not approved_code:
             yield {"event": "meta_prompt_start", "status": "RUNNING", "active_agent": "Prompt_Engineer_Agent", "message": "Synthesizing prompt..."}
             self.run_autonomous_generation(self.state["current_blueprint"])
 
-        while retry_count < self.max_retries:
+        # ─────────────────────────────────────────────────────────────
+        # 🔄 SELF-CORRECTION LOOP
+        # ─────────────────────────────────────────────────────────────
+        while True:
+            print(f"[ORCHESTRATOR] Loop iteration {retry_count}. Max retries: {self.max_retries}")
             
+            if retry_count >= self.max_retries:
+                print("[ORCHESTRATOR] MAX RETRIES REACHED. BREAKING LOOP.")
+                yield {
+                    "event": "max_retries_exceeded",
+                    "status": "FAILED",
+                    "active_agent": "System",
+                    "message": f"Failed after {self.max_retries} correction attempts.",
+                    "generated_code": clean_code
+                }
+                break 
+
             # ─────────────────────────────────────────────────────────────
-            # ️ MANDATORY HUMAN APPROVAL CHECKPOINT
+            # 1️⃣ HANDLE HUMAN APPROVED CODE (One-shot execution)
             # ─────────────────────────────────────────────────────────────
             if approved_code:
-                # User approved the code, use it directly and skip generation
+                print("[ORCHESTRATOR] Processing Human Approved Code...")
                 clean_code = approved_code
-                yield {"event": "approval_received", "status": "RUNNING", "active_agent": "Human", "message": "Human approved code. Proceeding to sandbox execution."}
-                approved_code = None # Clear it so we don't skip generation on subsequent retries
+                approved_code = None # Clear it immediately
+                skip_tests = True    # Skip tests for manually approved code
+
+                with open(self.file_path, "w") as f:
+                    f.write(clean_code)
+
+                yield {"event": "sandbox_start", "status": "RUNNING", "active_agent": "Sandbox", "message": "Executing approved code..."}
+                execution_result = run_in_sandbox(self.file_path, timeout=10.0)
+
+                if execution_result["exit_code"] == 0:
+                    print("[ORCHESTRATOR] Approved code SUCCEEDED in sandbox!")
+                    yield {
+                        "event": "execution_success", 
+                        "status": "COMPLETED", 
+                        "active_agent": "System", 
+                        "message": "Success! Approved code executed.", 
+                        "stdout": execution_result["stdout"]
+                    }
+                    break # <--- CRITICAL: STOP THE LOOP ON SUCCESS
+                else:
+                    clean_error = parse_stderr(execution_result["stderr"])
+                    print(f"[ORCHESTRATOR] Approved code FAILED in sandbox: {clean_error}")
+                    yield {
+                        "event": "sandbox_fail", 
+                        "status": "FAILED", 
+                        "active_agent": "System", 
+                        "message": f"Approved code failed: {clean_error[:100]}", 
+                        "raw_traceback": clean_error
+                    }
+                    break # <--- CRITICAL: STOP THE LOOP ON FAILURE (DO NOT CALL LEAD CODER)
+
+            # ─────────────────────────────────────────────────────────────
+            # 2️⃣ HANDLE AI GENERATION
+            # ─────────────────────────────────────────────────────────────
             else:
-                # Standard Generation Phase
+                print("[ORCHESTRATOR] Generating new code with Lead Coder...")
                 if human_hint and retry_count == 0:
                     user_prompt = f"Human Hint: {human_hint}\nBlueprint: {self.state['current_blueprint']}\nRewrite script."
                 elif qa_feedback and qa_feedback.get("status") == "FAIL":
@@ -196,47 +238,136 @@ class QwenDevSwarmOrchestrator:
                 if not clean_code:
                     clean_code = "# ERROR: No code generated.\n"
 
-                #  CRITICAL SECURITY PAUSE: If approval is required, stop here.
+                # Security Audit
+                yield {"event": "security_audit_start", "status": "RUNNING", "active_agent": "Security_Auditor_Agent", "message": "Scanning for vulnerabilities..."}
+                security_audit_text = self.swarm["security_auditor"].call_llm(
+                    f"Review this code for vulnerabilities:\n\n{clean_code}", 
+                    require_json=True
+                )
+                try:
+                    security_report = json.loads(security_audit_text)
+                except json.JSONDecodeError:
+                    security_report = {"status": "PASS", "vulnerabilities": [], "risk_level": "NONE", "remediation_hint": "Audit parsing failed."}
+
+                # Test Generation
+                yield {"event": "test_generation_start", "status": "RUNNING", "active_agent": "Test_Generator_Agent", "message": "Generating unit tests..."}
+                test_gen_text = ""
+                for stream_chunk in self.swarm["test_generator"].call_llm_stream(
+                    f"Feature Request: {self.state['current_blueprint']}\n\nCode Implementation:\n{clean_code}"
+                ):
+                    yield stream_chunk
+                    if stream_chunk.get("type") == "content":
+                        test_gen_text += stream_chunk.get("text", "")
+
+                generated_tests = extract_code_from_markdown(test_gen_text)
+                if not generated_tests:
+                    generated_tests = "# ERROR: No tests generated.\n"
+                
+                skip_tests = False
+
+                # PAUSE FOR APPROVAL
                 if self.require_approval:
+                    print("[ORCHESTRATOR] Pausing for human approval...")
+                    self.state["retry_count"] = retry_count
+                    self.state["clean_code"] = clean_code
+                    self.state["generated_tests"] = generated_tests
+                    self.state["qa_feedback"] = qa_feedback
+
                     yield {
                         "event": "await_human_approval",
                         "status": "PAUSED",
                         "active_agent": "Human",
                         "message": "Code generated. Awaiting mandatory human review before execution.",
                         "generated_code": clean_code,
+                        "generated_tests": generated_tests,
+                        "security_report": security_report,
                         "retry_count": retry_count
                     }
-                    return # Stop the generator. UI will handle the resume.
+                    return # Stop generator to wait for UI
 
             # ─────────────────────────────────────────────────────────────
-            # 🏗️ SANDBOX EXECUTION (Only reached if approved or approval disabled)
+            # 3️⃣ SANDBOX EXECUTION (For AI Generated Code)
             # ─────────────────────────────────────────────────────────────
             with open(self.file_path, "w") as f:
                 f.write(clean_code)
-                
-            yield {"event": "sandbox_start", "status": "RUNNING", "active_agent": "Sandbox", "message": "Executing in Docker sandbox..."}
+
+            test_file_path = "test_generated_script.py"
+            with open(test_file_path, "w") as f:
+                f.write(generated_tests)
+
+            yield {"event": "sandbox_start", "status": "RUNNING", "active_agent": "Sandbox", "message": "Executing AI generated script..."}
             execution_result = run_in_sandbox(self.file_path, timeout=10.0)
 
             if execution_result["exit_code"] == 0:
-                yield {"event": "execution_success", "status": "COMPLETED", "active_agent": "System", "message": "Success!", "stdout": execution_result["stdout"]}
-                break
+                if skip_tests:
+                    yield {"event": "execution_success", "status": "COMPLETED", "active_agent": "System", "message": "Success!", "stdout": execution_result["stdout"]}
+                    break
+                
+                print("[ORCHESTRATOR] Main script passed. Running tests...")
+                yield {"event": "test_execution_start", "status": "RUNNING", "active_agent": "Sandbox", "message": "Running unit tests..."}
+                test_result = run_in_sandbox(
+                    test_file_path, 
+                    timeout=15.0, 
+                    command=["pytest", f"/workspace/{os.path.basename(test_file_path)}", "-v"]
+                )
+                
+                # Exit code 0 = success, 5 = no tests collected
+                if test_result["exit_code"] in [0, 5]:
+                    print("[ORCHESTRATOR] Tests passed! Generating docs...")
+                    yield {"event": "doc_gen_start", "status": "RUNNING", "active_agent": "Documentation_Agent", "message": "Generating documentation..."}
+                    doc_text = self.swarm["documentation_agent"].call_llm(
+                        f"Code:\n{clean_code}\n\nFeature Request:\n{self.state['current_blueprint']}",
+                        require_json=True
+                    )
+                    try:
+                        doc_report = json.loads(doc_text)
+                        documented_code = doc_report.get("documented_code", clean_code)
+                        readme_md = doc_report.get("readme_md", "")
+                        
+                        with open(self.file_path, "w") as f:
+                            f.write(documented_code)
+                        with open("README.md", "w") as f:
+                            f.write(readme_md)
+                    except json.JSONDecodeError:
+                        logger.warning("Documentation agent returned invalid JSON. Skipping doc generation.")
 
-            # Handle Failure
-            clean_error = parse_stderr(execution_result["stderr"])
-            yield {"event": "sandbox_fail", "status": "RUNNING", "active_agent": "Sandbox", "message": "Execution failed.", "raw_traceback": clean_error}
-            
-            qa_prompt = f"Code:\n{clean_code}\n\nError:\n{clean_error}"
+                    yield {
+                        "event": "execution_success", 
+                        "status": "COMPLETED", 
+                        "active_agent": "System", 
+                        "message": "Success! Code and tests passed.", 
+                        "stdout": execution_result["stdout"], 
+                        "test_stdout": test_result["stdout"]
+                    }
+                    break
+                else:
+                    clean_test_error = parse_stderr(test_result["stderr"])
+                    print(f"[ORCHESTRATOR] Tests failed: {clean_test_error}")
+                    yield {"event": "test_fail", "status": "RUNNING", "active_agent": "Sandbox", "message": "Unit tests failed.", "raw_traceback": clean_test_error}
+                    clean_error = clean_test_error
+                    qa_prompt = f"Code:\n{clean_code}\n\nTests:\n{generated_tests}\n\nTest Error:\n{clean_error}"
+            else:
+                clean_error = parse_stderr(execution_result["stderr"])
+                print(f"[ORCHESTRATOR] Sandbox execution failed: {clean_error}")
+                yield {"event": "sandbox_fail", "status": "RUNNING", "active_agent": "Sandbox", "message": "Execution failed.", "raw_traceback": clean_error}
+                qa_prompt = f"Code:\n{clean_code}\n\nError:\n{clean_error}"
+
+            # Handle Failure (QA Analyst Loop)
+            print("[ORCHESTRATOR] Sending to QA Analyst for feedback...")
             qa_collected_text = ""
             for stream_chunk in self.swarm["qa_analyst"].call_llm_stream(qa_prompt, require_json=True):
                 yield stream_chunk
                 if stream_chunk.get("type") == "content":
                     qa_collected_text += stream_chunk.get("text", "")
 
-            # 🛡️ REPLACED: Use the robust multi-stage parser instead of raw json.loads()
             qa_feedback = parse_qa_feedback(qa_collected_text)
 
-            human_hint = None # Clear hint for next loop
+            human_hint = None 
             retry_count += 1
-
-        if retry_count == self.max_retries:
-            yield {"event": "hitl_paused", "status": "PAUSED", "active_agent": "System", "message": "Max retries reached."}
+            
+            # Save state for next loop
+            self.state["retry_count"] = retry_count
+            self.state["clean_code"] = clean_code
+            self.state["generated_tests"] = generated_tests
+            self.state["qa_feedback"] = qa_feedback
+            self.state["skip_tests"] = skip_tests

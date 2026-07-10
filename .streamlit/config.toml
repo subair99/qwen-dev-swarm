@@ -1,0 +1,5 @@
+# .streamlit/config.toml
+
+[browser]
+# Gather usage stats (optional, but good for debugging)
+gatherUsageStats = false

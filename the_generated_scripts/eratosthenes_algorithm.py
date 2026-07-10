@@ -1,126 +1,244 @@
+"""
+High-Performance Sieve of Eratosthenes Implementation
+
+This module provides a production-grade, memory-optimized implementation of the 
+Sieve of Eratosthenes algorithm to compute prime numbers up to a given integer `n`.
+It utilizes a half-sieve (skipping even numbers) backed by a C-contiguous `bytearray` 
+and slice assignments for maximum computational efficiency.
+"""
+
 import math
+import sys
 import time
-from typing import List
+from typing import Any, Generator, List, Union, Iterator
+import pytest
 
-def generate_primes(n: int) -> List[int]:
+# Maximum safe memory threshold for the sieve array (2 GB or half of sys.maxsize)
+_MAX_SIEVE_BYTES = min(2 * 1024 * 1024 * 1024, sys.maxsize // 2)
+
+
+def _validate_and_cast(n: Any) -> int:
     """
-    Generates all prime numbers up to a given integer `n` using a highly 
-    optimized Sieve of Eratosthenes algorithm.
-
-    This implementation utilizes Base-2 wheel factorization to halve memory 
-    and execution time, CPython slice assignments to push iteration to C-level, 
-    and a bytearray for memory-efficient storage.
-
+    Validates and casts the input to a strict integer.
+    
     Args:
-        n (int): The upper bound (inclusive) for finding prime numbers.
-
+        n: The input value to validate.
+        
     Returns:
-        List[int]: A list of all prime numbers less than or equal to `n`.
-
+        The validated integer value.
+        
     Raises:
-        TypeError: If `n` is not strictly an integer (e.g., bool, float, str).
-        ValueError: If `n` is negative.
-
-    Complexity:
-        Time: O(n log log n)
-        Space: O(n) - Specifically, ~0.5 bytes per integer up to n due to 
-                Base-2 wheel factorization and bytearray, drastically reducing 
-                memory compared to naive list[bool] implementations.
+        TypeError: If the input is a boolean, float, string, None, or an object 
+                   lacking the __index__ protocol.
     """
-    # Strict type validation: reject bool (subclass of int), float, str, etc.
-    if type(n) is not int:
-        raise TypeError(f"Expected 'int' for parameter 'n', got '{type(n).__name__}'.")
+    if isinstance(n, bool):
+        raise TypeError("Boolean values are not valid integers for this operation.")
+    if isinstance(n, int):
+        return n
+    if hasattr(n, '__index__'):
+        return n.__index__()
+    raise TypeError(f"Expected an integer or an object implementing __index__, got {type(n).__name__}.")
+
+
+def _check_memory_limit(half_n: int) -> None:
+    """
+    Checks if the requested sieve size exceeds the safe memory threshold.
     
-    # Negative bounds checking
-    if n < 0:
-        raise ValueError(f"Parameter 'n' must be non-negative, got {n}.")
+    Args:
+        half_n: The size of the half-sieve array (representing odd numbers).
         
-    # Handle edge cases where n < 2 gracefully
+    Raises:
+        MemoryError: If the required memory exceeds the predefined safe limit.
+    """
+    if half_n > _MAX_SIEVE_BYTES:
+        raise MemoryError(
+            f"Requested sieve size ({half_n} bytes) exceeds the safe memory "
+            f"threshold of {_MAX_SIEVE_BYTES} bytes. Reduce 'n' to prevent OOM."
+        )
+
+
+def _prime_generator(n: int) -> Generator[int, None, None]:
+    """
+    Core sieving algorithm that lazily yields prime numbers up to `n`.
+    
+    Implements the "skip evens" optimization, handling 2 as a special case 
+    and sieving only odd numbers. Uses `bytearray` with slice assignment 
+    for O(n log log n) time complexity and minimal memory overhead.
+    
+    Args:
+        n: The upper bound (inclusive) for finding primes. Must be a validated integer.
+        
+    Yields:
+        Prime numbers in the range [2, n].
+    """
     if n < 2:
-        return []
+        return
         
-    # Base-2 wheel factorization: only store odd numbers >= 3.
-    # Index `i` represents the number `2*i + 3`.
-    # The maximum index required is calculated to cover up to `n`.
-    size = (n - 1) // 2
+    yield 2
     
-    # Memory-efficient data structure: bytearray initialized to 1 (True/Prime)
-    sieve = bytearray(b'\x01' * size)
+    if n == 2:
+        return
+
+    # Calculate the number of odd integers >= 3 up to n.
+    # Mapping: index i represents the number 2*i + 3.
+    half_n = (n - 1) // 2
+    if half_n <= 0:
+        return
+        
+    _check_memory_limit(half_n)
     
-    # Square root boundary for the outer loop
+    # 1 indicates prime, 0 indicates composite.
+    sieve = bytearray(b'\x01') * half_n
+    
     limit = math.isqrt(n)
     
-    # Iterate over indices `i` such that the represented prime `p = 2*i + 3 <= limit`
-    for i in range((limit - 1) // 2):
+    # Outer loop only needs to check primes up to sqrt(n).
+    # p = 2*i + 3 <= limit  =>  i <= (limit - 3) // 2
+    max_i = (limit - 3) // 2
+    
+    for i in range(max_i + 1):
         if sieve[i]:
             p = 2 * i + 3
+            # Start marking at p^2. 
+            # Index for p^2 is (p^2 - 3) // 2 = 2*i^2 + 6*i + 3
+            start = 2 * i * i + 6 * i + 3
+            step = p  # Step by p in index space (equivalent to 2p in number space)
             
-            # Start marking composites from p^2
-            # The index for p^2 is (p^2 - 3) // 2
-            start = (p * p - 3) // 2
-            step = p
-            
-            # Guard against index out of bounds on p^2
-            if start < size:
-                # Mathematical slice length calculation to avoid len() overhead
-                length = (size - start + step - 1) // step
+            if start < half_n:
+                length = len(range(start, half_n, step))
+                # Slice assignment with bytes is the fastest way to zero out memory in Python
+                sieve[start::step] = bytes(length)
                 
-                # CPython slice assignment to push iteration to C-level
-                # bytearray(length) creates a zero-filled sequence (0 = Composite)
-                sieve[start::step] = bytearray(length)
+    # Yield the remaining primes lazily
+    for i in range(half_n):
+        if sieve[i]:
+            yield 2 * i + 3
+
+
+def sieve_of_eratosthenes(n: Any, materialize: bool = False) -> Union[Generator[int, None, None], List[int]]:
+    """
+    Public API to compute all prime numbers up to `n` using the Sieve of Eratosthenes.
+    
+    Args:
+        n: The upper bound (inclusive) for the prime search. Must be an integer 
+           (or an object implementing `__index__`). Booleans, floats, and strings 
+           are strictly rejected.
+        materialize: If True, returns a fully materialized list of primes. If False 
+                     (default), returns a memory-efficient generator.
+                     
+    Returns:
+        A generator yielding primes, or a list of primes if `materialize=True`.
+        
+    Raises:
+        TypeError: If `n` is not a valid integer type.
+        MemoryError: If `n` is large enough that the sieve array would exceed 2GB.
+    """
+    validated_n = _validate_and_cast(n)
+    gen = _prime_generator(validated_n)
+    
+    if materialize:
+        return list(gen)
+    return gen
+
+
+# ==============================================================================
+# UNIT TESTS (pytest)
+# ==============================================================================
+
+class TestSieveValidation:
+    """Tests for strict input validation and type checking."""
+
+    def test_valid_integers(self):
+        assert sieve_of_eratosthenes(10, materialize=True) == [2, 3, 5, 7]
+        assert sieve_of_eratosthenes(2, materialize=True) == [2]
+        assert sieve_of_eratosthenes(0, materialize=True) == []
+        assert sieve_of_eratosthenes(-100, materialize=True) == []
+
+    def test_reject_booleans(self):
+        with pytest.raises(TypeError, match="Boolean values"):
+            sieve_of_eratosthenes(True)
+        with pytest.raises(TypeError, match="Boolean values"):
+            sieve_of_eratosthenes(False)
+
+    def test_reject_invalid_types(self):
+        with pytest.raises(TypeError):
+            sieve_of_eratosthenes(3.14)
+        with pytest.raises(TypeError):
+            sieve_of_eratosthenes("10")
+        with pytest.raises(TypeError):
+            sieve_of_eratosthenes(None)
+        with pytest.raises(TypeError):
+            sieve_of_eratosthenes([10])
+
+    def test_accept_indexable_custom_types(self):
+        class CustomInt:
+            def __init__(self, val):
+                self.val = val
+            def __index__(self):
+                return self.val
                 
-    # Collect primes: 2 is the only even prime
-    primes = [2]
-    
-    # Extract remaining primes from the sieve using list comprehension for speed
-    primes.extend([2 * i + 3 for i, is_prime in enumerate(sieve) if is_prime])
-    
-    return primes
+        assert sieve_of_eratosthenes(CustomInt(10), materialize=True) == [2, 3, 5, 7]
+
+    def test_reject_non_indexable_custom_types(self):
+        class BadCustomType:
+            def __int__(self):
+                return 10  # __int__ is not __index__
+                
+        with pytest.raises(TypeError):
+            sieve_of_eratosthenes(BadCustomType())
+
+
+class TestSieveAlgorithm:
+    """Tests for mathematical correctness and boundary conditions."""
+
+    def test_standard_cases(self):
+        assert sieve_of_eratosthenes(100, materialize=True) == [
+            2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 
+            53, 59, 61, 67, 71, 73, 79, 83, 89, 97
+        ]
+
+    def test_boundary_n_equals_2(self):
+        assert sieve_of_eratosthenes(2, materialize=True) == [2]
+
+    def test_boundary_n_equals_3(self):
+        assert sieve_of_eratosthenes(3, materialize=True) == [2, 3]
+
+    def test_boundary_n_equals_1(self):
+        assert sieve_of_eratosthenes(1, materialize=True) == []
+
+    def test_generator_consumption(self):
+        gen = sieve_of_eratosthenes(10)
+        assert next(gen) == 2
+        assert next(gen) == 3
+        assert next(gen) == 5
+        assert next(gen) == 7
+        with pytest.raises(StopIteration):
+            next(gen)
+
+
+class TestSievePerformanceAndMemory:
+    """Tests for performance constraints and memory safety."""
+
+    def test_performance_10_million(self):
+        """Ensures n=10^7 executes well under standard time limits."""
+        start_time = time.perf_counter()
+        # We materialize to force full evaluation of the generator
+        primes = sieve_of_eratosthenes(10_000_000, materialize=True)
+        elapsed = time.perf_counter() - start_time
+        
+        # 10^7 should take < 1.5 seconds on any modern CPU with this optimized sieve
+        assert elapsed < 2.0, f"Performance regression: took {elapsed:.2f}s"
+        assert len(primes) == 664579  # Known prime counting function value for 10^7
+
+    def test_memory_limit_enforcement(self):
+        """Ensures a MemoryError is raised for astronomically large n."""
+        # n = 10^11 would require ~50GB of RAM for the half-sieve
+        with pytest.raises(MemoryError, match="exceeds the safe memory threshold"):
+            # We don't materialize, but the generator initialization checks memory
+            gen = sieve_of_eratosthenes(100_000_000_000)
+            next(gen)  # Force generator execution
 
 
 if __name__ == "__main__":
-    print("=" * 60)
-    print(" SIEVE OF ERATOSTHENES - OPTIMIZED IMPLEMENTATION TESTS")
-    print("=" * 60)
-    
-    # 1. Standard & Edge Cases
-    print("\n--- Standard & Edge Cases ---")
-    test_cases = [0, 1, 2, 3, 10, 100]
-    for tc in test_cases:
-        result = generate_primes(tc)
-        print(f"n = {tc:3d} -> {result}")
-        
-    # 2. Exception Cases
-    print("\n--- Exception Cases ---")
-    exception_cases = [
-        (True, TypeError),
-        (10.5, TypeError),
-        ("100", TypeError),
-        (-5, ValueError)
-    ]
-    
-    for val, expected_exc in exception_cases:
-        try:
-            generate_primes(val)
-            print(f"FAIL: n = {val!r} did not raise {expected_exc.__name__}")
-        except expected_exc as e:
-            print(f"PASS: n = {val!r} correctly raised {expected_exc.__name__}: {e}")
-        except Exception as e:
-            print(f"FAIL: n = {val!r} raised {type(e).__name__} instead of {expected_exc.__name__}: {e}")
-
-    # 3. Performance Benchmark
-    print("\n--- Performance Benchmark ---")
-    N_BENCH = 10_000_000
-    print(f"Benchmarking generate_primes(n={N_BENCH:,})...")
-    print("*(This utilizes CPython slice assignments and Base-2 wheel factorization)*")
-    
-    start_time = time.perf_counter()
-    primes = generate_primes(N_BENCH)
-    end_time = time.perf_counter()
-    
-    elapsed = end_time - start_time
-    print(f"\nResults:")
-    print(f" - Found {len(primes):,} primes in {elapsed:.4f} seconds.")
-    print(f" - First 10 primes: {primes[:10]}")
-    print(f" - Last 10 primes:  {primes[-10:]}")
-    print("=" * 60)
+    # Execute pytest when the script is run directly
+    pytest.main([__file__, "-v", "--tb=short"])

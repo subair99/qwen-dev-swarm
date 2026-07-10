@@ -5,16 +5,9 @@ import re
 from typing import List, Dict, Any, Callable, Generator, Optional
 from openai import OpenAI
 
-# Assuming you have a config module. If not, this gracefully handles missing settings.
-try:
-    from config.settings import settings
-except ImportError:
-    class MockSettings:
-        QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-        QWEN_API_KEY = None
-        DASHSCOPE_API_KEY = None
-        MODEL_NAME = "qwen-max"
-    settings = MockSettings()
+# ✅ CENTRALIZED CONFIGURATION IMPORTS
+# These are now strictly enforced to come from the .env file via config.py
+from config import QWEN_API_KEY, QWEN_BASE_URL, MODEL_NAME, GUARDRAIL_MODEL_NAME
 
 
 class StreamParser:
@@ -82,18 +75,15 @@ class QwenAgent:
         self.tools = tools or []
         self.mock_fallback = mock_fallback
         
-        # 1. Pull configuration from settings natively
-        self.base_url = getattr(settings, "QWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
-        
-        # 2. Securely extract API key
-        self.api_key = getattr(settings, "QWEN_API_KEY", None) or getattr(settings, "DASHSCOPE_API_KEY", None)
-        
-        # 3. Target model name
-        self.model_name = getattr(settings, "MODEL_NAME", "qwen-max")
+        # ✅ USE CENTRALIZED CONFIGURATION DIRECTLY
+        self.base_url = QWEN_BASE_URL
+        self.api_key = QWEN_API_KEY
+        self.model_name = MODEL_NAME
+        self.guardrail_model_name = GUARDRAIL_MODEL_NAME
         
         # Guardrail check: Fail fast if environment variables fail to load
         if not self.api_key:
-            raise ValueError(f"Critical: Cloud access key could not be resolved from settings for agent: {self.name}")
+            raise ValueError(f"Critical: QWEN_API_KEY is missing in config for agent: {self.name}")
         
         # Initialize the OpenAI wrapper client
         self.client = OpenAI(
@@ -364,6 +354,11 @@ def create_swarm_agents() -> Dict[str, QwenAgent]:
             "known reference values, type rejections, and edge cases.\n"
             "5. FORMATTING: Always wrap your code in standard markdown code blocks (```python ... ```). "
             "Do not include conversational filler before or after the code block."
+            "6. STANDARD LIBRARY ONLY: You are executing in a strictly isolated Docker sandbox. "
+            "You MUST ONLY use Python standard library modules (e.g., os, sys, json, math, re). "
+            "DO NOT import external libraries like requests, pandas, numpy, or bs4, as they will cause an immediate crash."
+            "7. NO TEST IMPORTS IN MAIN SCRIPT: Never import 'pytest' or any testing frameworks in the main generated script. "
+            "The main script must contain ONLY the core logic and execution code. Testing logic will be handled separately."
         )
     )
  
@@ -433,11 +428,69 @@ def create_swarm_agents() -> Dict[str, QwenAgent]:
             "}"
         )
     )
+
+    # ─────────────────────────────────────────────────────────────
+    # 🆕 NEW AGENTS FOR SWARM EXPANSION
+    # ─────────────────────────────────────────────────────────────
+    test_generator = create_agent(
+        name="Test_Generator_Agent",
+        instructions=(
+            "You are an expert Test Automation Engineer. Your task is to generate comprehensive, "
+            "deterministic `pytest` unit tests based on the provided feature request and code implementation.\n\n"
+            "TEST GENERATION MANDATES:\n"
+            "- Generate tests that verify logical correctness, not just syntactic validity.\n"
+            "- Include tests for boundary values, edge cases, and expected exceptions.\n"
+            "- Ensure all tests are deterministic (no time-based assertions).\n"
+            "- Output ONLY the python code for the test file, wrapped in ```python ... ```.\n"
+            "- Do not include conversational filler."
+        )
+    )
+
+    security_auditor = create_agent(
+        name="Security_Auditor_Agent",
+        instructions=(
+            "You are an expert Application Security Engineer. Your task is to audit the generated code "
+            "for security vulnerabilities before it is approved for execution.\n\n"
+            "AUDIT MANDATES:\n"
+            "- Scan for common vulnerabilities: SQL injection, XSS, insecure deserialization, hardcoded secrets, "
+            "path traversal, and unsafe subprocess usage.\n"
+            "- Evaluate the risk level of any findings.\n"
+            "- Output a valid JSON object matching the following schema:\n"
+            "{\n"
+            '  "status": "PASS" or "FAIL",\n'
+            '  "vulnerabilities": ["list of identified vulnerabilities"],\n'
+            '  "risk_level": "HIGH", "MEDIUM", "LOW", or "NONE",\n'
+            '  "remediation_hint": "Instructions on how to fix the vulnerabilities"\n'
+            "}\n"
+            "- If no vulnerabilities are found, return status PASS and empty vulnerabilities list."
+        )
+    )
+
+    documentation_agent = create_agent(
+        name="Documentation_Agent",
+        instructions=(
+            "You are an expert Technical Writer. Your task is to generate comprehensive documentation "
+            "for the generated code to ensure it is production-ready.\n\n"
+            "DOCUMENTATION MANDATES:\n"
+            "- Generate detailed docstrings for all functions and classes.\n"
+            "- Ensure strict type hints are present and correct.\n"
+            "- Generate a comprehensive README.md that explains the purpose, usage, and dependencies of the code.\n"
+            "- Output a valid JSON object with two keys:\n"
+            "{\n"
+            '  "documented_code": "The full python code with docstrings and type hints added",\n'
+            '  "readme_md": "The content of the README.md file"\n'
+            "}\n"
+            "- Do not include conversational filler."
+        )
+    )
     
     return {
         "prompt_engineer": prompt_engineer,
         "architect": architect,
         "coder": coder,
         "qa_analyst": qa_analyst,
-        "code_reviewer": code_reviewer
+        "code_reviewer": code_reviewer,
+        "test_generator": test_generator,
+        "security_auditor": security_auditor,
+        "documentation_agent": documentation_agent
     }

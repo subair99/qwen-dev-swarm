@@ -1,222 +1,90 @@
+from __future__ import annotations
+
 import random
-import math
 import statistics
-from typing import List, Sequence
 
 
-def generate_dataset(seed: int = 42, size: int = 1000, min_val: int = 1, max_val: int = 10000) -> List[int]:
+def generate_dataset(size: int = 1000, seed: int = 42, min_val: int = 1, max_val: int = 100) -> tuple[int, ...]:
     """
-    Deterministically generates a list of random integers.
-
-    This function resolves the paradox of a "hardcoded" random list by using a 
-    fixed seed, ensuring the output is perfectly reproducible and functionally 
-    immutable across runs without bloating the source code with literal integers.
-
-    Args:
-        seed (int): The random seed for reproducibility. Defaults to 42.
-        size (int): The number of integers to generate. Defaults to 1000.
-        min_val (int): The minimum possible integer value. Defaults to 1.
-        max_val (int): The maximum possible integer value. Defaults to 10000.
-
-    Returns:
-        List[int]: A list of deterministically generated integers.
-        
-    Time Complexity:
-        O(N) where N is the size of the dataset.
+    Factory function to generate a reproducible dataset of random integers.
+    Returns an immutable tuple to prevent accidental mutation.
     """
     random.seed(seed)
-    return [random.randint(min_val, max_val) for _ in range(size)]
+    return tuple(random.randint(min_val, max_val) for _ in range(size))
 
 
-def validate_non_negative(data: Sequence[int]) -> None:
+# The generated dataset immediately cast to an immutable tuple at the module level
+DATASET: tuple[int, ...] = generate_dataset()
+
+
+def validate_dataset(data: tuple[int, ...]) -> None:
     """
-    Validates that all integers in the dataset are strictly non-negative.
-
-    Args:
-        data (Sequence[int]): The dataset to validate.
-
-    Raises:
-        TypeError: If an element is not an integer.
-        ValueError: If a negative integer is found, detailing the index and value.
-        
-    Time Complexity:
-        O(N) where N is the length of the dataset.
+    Performs strict runtime type validation and negative bounds checking.
+    Fails fast with TypeError or ValueError if constraints are violated.
     """
-    for index, value in enumerate(data):
-        if not isinstance(value, int):
-            raise TypeError(f"Type violation at index {index}: expected int, got {type(value).__name__}.")
-        if value < 0:
+    for item in data:
+        # Strict type check: must be exactly int, not a subclass like bool
+        if type(item) is not int:
+            raise TypeError(
+                f"Type validation failed: encountered {type(item).__name__}, expected strictly 'int'."
+            )
+        # Negative bounds check
+        if item < 0:
             raise ValueError(
-                f"Negative bound violated at index {index}: value is {value}. "
-                "All values must be >= 0."
+                f"Negative bounds check failed: encountered {item}, expected non-negative integer (>= 0)."
             )
 
 
-def calculate_mean(data: Sequence[int]) -> float:
+def analyze_dataset(data: tuple[int, ...]) -> dict[str, float | list[int]]:
     """
-    Calculates the arithmetic mean of the dataset.
-
-    Uses math.fsum to ensure high precision and avoid floating-point 
-    catastrophic cancellation during the summation phase.
-
-    Args:
-        data (Sequence[int]): The dataset.
-
-    Returns:
-        float: The arithmetic mean.
-
-    Raises:
-        statistics.StatisticsError: If the dataset is empty.
-        
-    Time Complexity:
-        O(N) where N is the length of the dataset.
+    Encapsulates statistical calculations. Accepts an immutable dataset 
+    and returns a structured dictionary of results.
     """
-    if not data:
-        raise statistics.StatisticsError("calculate_mean requires at least one data point.")
-    return math.fsum(data) / len(data)
-
-
-def calculate_median(data: Sequence[int]) -> float:
-    """
-    Calculates the median of the dataset.
-
-    Args:
-        data (Sequence[int]): The dataset.
-
-    Returns:
-        float: The median value.
-
-    Raises:
-        statistics.StatisticsError: If the dataset is empty.
-        
-    Time Complexity:
-        O(N log N) due to the Timsort algorithm used in Python's sorted().
-    """
-    if not data:
-        raise statistics.StatisticsError("calculate_median requires at least one data point.")
+    # Validate before performing any calculations
+    validate_dataset(data)
     
-    sorted_data = sorted(data)
-    n = len(sorted_data)
-    mid = n // 2
+    # Mean: O(N) time complexity
+    mean_val: float = sum(data) / len(data)
     
-    if n % 2 == 0:
-        return (sorted_data[mid - 1] + sorted_data[mid]) / 2.0
-    return float(sorted_data[mid])
-
-
-def calculate_modes(data: Sequence[int]) -> List[int]:
-    """
-    Identifies all modes (most frequent values) in the dataset.
-
-    Args:
-        data (Sequence[int]): The dataset.
-
-    Returns:
-        List[int]: A list of all modal values.
-
-    Raises:
-        statistics.StatisticsError: If the dataset is empty.
-        
-    Time Complexity:
-        O(N) where N is the length of the dataset.
-    """
-    if not data:
-        raise statistics.StatisticsError("calculate_modes requires at least one data point.")
-    return statistics.multimode(data)
-
-
-def calculate_sample_std_dev(data: Sequence[int]) -> float:
-    """
-    Calculates the sample standard deviation using Welford's online algorithm.
-
-    This approach applies Bessel's correction (dividing by N-1) and operates 
-    in O(N) time while minimizing floating-point catastrophic cancellation 
-    compared to naive two-pass or sum-of-squares methods.
-
-    Args:
-        data (Sequence[int]): The dataset.
-
-    Returns:
-        float: The sample standard deviation.
-
-    Raises:
-        statistics.StatisticsError: If the dataset has fewer than two data points.
-        
-    Time Complexity:
-        O(N) where N is the length of the dataset.
-    """
-    n = 0
-    mean = 0.0
-    m2 = 0.0
+    # Median: O(N log N) via standard library sorting overhead
+    median_val: float = statistics.median(data)
     
-    for x in data:
-        n += 1
-        delta = x - mean
-        mean += delta / n
-        delta2 = x - mean
-        m2 += delta * delta2
-        
-    if n < 2:
-        raise statistics.StatisticsError("Sample standard deviation requires at least two data points.")
-        
-    variance = m2 / (n - 1)  # Bessel's correction
-    return math.sqrt(variance)
-
-
-def display_results(mean: float, median: float, modes: List[int], std_dev: float) -> None:
-    """
-    Formats and prints the statistical results to the console.
-
-    Args:
-        mean (float): The calculated mean.
-        median (float): The calculated median.
-        modes (List[int]): The calculated modes.
-        std_dev (float): The calculated sample standard deviation.
-    """
-    print("-" * 45)
-    print("         STATISTICAL ANALYSIS RESULTS        ")
-    print("-" * 45)
-    print(f"{'Mean:':<25} {mean:>15.4f}")
-    print(f"{'Median:':<25} {median:>15.4f}")
+    # Mode: multimode used to correctly identify all modes and avoid traps
+    mode_val: list[int] = statistics.multimode(data)
     
-    modes_str = ", ".join(str(m) for m in modes)
-    # Adjust alignment dynamically if the modes string is exceptionally long
-    print(f"{'Mode(s):':<25} {modes_str:>15}")
+    # Standard Deviation: Sample standard deviation (Bessel's correction applied)
+    stdev_val: float = statistics.stdev(data)
     
-    print(f"{'Sample Std Dev:':<25} {std_dev:>15.4f}")
-    print("-" * 45)
+    return {
+        "mean": mean_val,
+        "median": median_val,
+        "mode": mode_val,
+        "standard_deviation": stdev_val
+    }
 
 
-def main() -> None:
+def present_results(results: dict[str, float | list[int]]) -> None:
     """
-    Main execution entry point.
-    
-    Orchestrates data generation, validation, statistical computation, 
-    and result display. Ensures strict separation of concerns and 
-    handles edge-case exceptions gracefully.
+    Encapsulates output formatting. Prints results in a clean, aligned, 
+    human-readable format.
     """
-    # 1. Generate Data
-    dataset = generate_dataset(seed=42, size=1000, min_val=1, max_val=10000)
+    print("=" * 45)
+    print("       STATISTICAL ANALYSIS RESULTS")
+    print("=" * 45)
     
-    # 2. Validate Data
-    # We intentionally do not catch ValueError here. If a negative bound is 
-    # violated, the script must immediately halt and raise the exception 
-    # to the interpreter as per strict structural guardrails.
-    validate_non_negative(dataset)
-
-    # 3. Compute Statistics
-    try:
-        mean_val = calculate_mean(dataset)
-        median_val = calculate_median(dataset)
-        modes_val = calculate_modes(dataset)
-        std_dev_val = calculate_sample_std_dev(dataset)
-    except statistics.StatisticsError as e:
-        print(f"Statistical Computation Error: {e}")
-        return
-
-    # 4. Display Results
-    display_results(mean_val, median_val, modes_val, std_dev_val)
+    print(f"Mean:               {results['mean']:.4f}")
+    print(f"Median:             {results['median']:.4f}")
+    
+    # Format mode as a comma-separated list
+    modes = results['mode']
+    mode_str = ", ".join(str(m) for m in modes)
+    print(f"Mode(s):            {mode_str}")
+    
+    print(f"Standard Deviation: {results['standard_deviation']:.4f}")
+    print("=" * 45)
 
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    # Execute analysis on the module-level immutable dataset
+    analysis_results = analyze_dataset(DATASET)
+    present_results(analysis_results)

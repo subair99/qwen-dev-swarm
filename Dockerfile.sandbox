@@ -1,15 +1,18 @@
-   # Use a minimal Python image
-   FROM python:3.12-slim
-   
-   # 1. Create a non-root user (UID 1000) for security
-   RUN groupadd -g 1000 sandbox && \
-       useradd -m -u 1000 -g sandbox sandbox_user
-   
-   # 2. Set working directory
-   WORKDIR /workspace
-   
-   # 3. Switch to the non-root user
-   USER sandbox_user
-   
-   # Default command (will be overridden by docker run)
-   CMD ["python"]
+# Use a minimal Python image
+FROM python:3.12-slim
+
+# Install pytest for running generated unit tests
+RUN pip install --no-cache-dir pytest
+
+# 1. Create a non-root user (UID 1000) for security
+RUN groupadd -g 1000 sandbox && \
+    useradd -m -u 1000 -g sandbox sandbox_user
+
+# 2. Set working directory
+WORKDIR /workspace
+
+# 3. Switch to the non-root user
+USER sandbox_user
+
+# Default command (will be overridden by docker run)
+CMD ["python"]

@@ -45,22 +45,23 @@ def mask_secret(secret: str) -> str:
 
 class Settings:
     def __init__(self):
-        # Bind variables directly to the instance
+        # 1. API Keys (Allow either QWEN or DASHSCOPE)
         self.QWEN_API_KEY: str = os.getenv("QWEN_API_KEY", "")
         self.DASHSCOPE_API_KEY: str = os.getenv("DASHSCOPE_API_KEY", "")
         
-        # Default fallback points to the standard public Aliyun DashScope endpoint
-        self.QWEN_BASE_URL: str = os.getenv(
-            "QWEN_BASE_URL", 
-            "https://dashscope.aliyuncs.com/compatible-mode/v1"
-        )
+        # 2. Strictly require Base URL (NO DEFAULT FALLBACK)
+        self.QWEN_BASE_URL: str = os.getenv("QWEN_BASE_URL")
+        if not self.QWEN_BASE_URL:
+            raise ValueError("❌ QWEN_BASE_URL is missing! It must be defined in your .env file.")
         
-        # Centralized Model Name definition
-        self.MODEL_NAME: str = os.getenv("MODEL_NAME", "qwen3.7-max")
-        
-        # NEW: Model used specifically for the semantic prompt injection guardrail.
-        # We use a cheaper/faster model to save costs and reduce latency for security checks.
-        self.GUARDRAIL_MODEL_NAME: str = os.getenv("GUARDRAIL_MODEL_NAME", "qwen-turbo")
+        # 3. Strictly require Model Names (NO DEFAULT FALLBACKS)
+        self.MODEL_NAME: str = os.getenv("MODEL_NAME")
+        if not self.MODEL_NAME:
+            raise ValueError("❌ MODEL_NAME is missing! It must be defined in your .env file.")
+            
+        self.GUARDRAIL_MODEL_NAME: str = os.getenv("GUARDRAIL_MODEL_NAME")
+        if not self.GUARDRAIL_MODEL_NAME:
+            raise ValueError("❌ GUARDRAIL_MODEL_NAME is missing! It must be defined in your .env file.")
 
     @property
     def api_key(self) -> str:
@@ -86,7 +87,12 @@ settings = Settings()
 # Automatically run validation on startup
 settings.validate()
 
-# Expose specific settings at the module level for easy importing by other modules
+# ✅ EXPOSE SPECIFIC SETTINGS AT THE MODULE LEVEL
+# This allows other modules to import them directly: 
+# from config.settings import QWEN_API_KEY, QWEN_BASE_URL, MODEL_NAME, GUARDRAIL_MODEL_NAME
+QWEN_API_KEY = settings.api_key
+QWEN_BASE_URL = settings.QWEN_BASE_URL
+MODEL_NAME = settings.MODEL_NAME
 GUARDRAIL_MODEL_NAME = settings.GUARDRAIL_MODEL_NAME
 
 

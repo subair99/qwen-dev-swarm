@@ -1,10 +1,53 @@
 import os
+import sys
 import subprocess
 import shutil
 import tempfile
 import logging
 from pathlib import Path
 from typing import Dict, Any
+
+# ─────────────────────────────────────────────────────────────
+# 🤖 AUTOMATIC DOCKER IMAGE BUILDER
+# ─────────────────────────────────────────────────────────────
+def _ensure_sandbox_image():
+    """Checks if the Docker image exists and builds it if missing."""
+    image_name = "qwen-dev-swarm-sandbox:latest"
+    dockerfile_path = "Dockerfile.sandbox"
+    
+    try:
+        # 1. Check if image exists
+        check_result = subprocess.run(
+            ["docker", "image", "inspect", image_name],
+            capture_output=True, text=True
+        )
+        
+        if check_result.returncode != 0:
+            print(f"📦 Sandbox image missing. Building '{image_name}' automatically...")
+            
+            # 2. Build the image
+            build_result = subprocess.run(
+                ["docker", "build", "-t", image_name, "-f", dockerfile_path, "."],
+                capture_output=True, text=True
+            )
+            
+            if build_result.returncode != 0:
+                print(f" Failed to build Docker image:\n{build_result.stderr}")
+                sys.exit(1)
+            print("✅ Sandbox image built successfully!")
+        else:
+            print(f"✅ Sandbox image '{image_name}' is ready.")
+            
+    except FileNotFoundError:
+        print("❌ Docker command not found. Is Docker installed and in your PATH?")
+        sys.exit(1)
+    except Exception as e:
+        print(f"❌ Docker check failed: {e}")
+        sys.exit(1)
+
+# Run the check immediately when sandbox.py is imported
+_ensure_sandbox_image()
+# ─────────────────────────────────────────────────────────────
 
 # Setup logger for the sandbox module
 logger = logging.getLogger(__name__)
@@ -23,7 +66,8 @@ def run_in_sandbox(
     script_path: str | Path, 
     timeout: float = 10.0, 
     max_memory_mb: int = 256,
-    max_output_bytes: int = 1_000_000  # 1MB limit on stdout/stderr
+    max_output_bytes: int = 1_000_000,  # 1MB limit on stdout/stderr
+    command: list[str] | None = None    # <--- NEW PARAMETER
 ) -> Dict[str, Any]:
     """
     Executes a script in a strictly isolated Docker container.
@@ -41,6 +85,8 @@ def run_in_sandbox(
         timeout: Maximum execution time in seconds to prevent infinite loops.
         max_memory_mb: RAM limit in megabytes (mapped to Docker --memory flag).
         max_output_bytes: Maximum size of stdout/stderr to capture (prevents memory exhaustion).
+        command: Optional list of strings to override the default execution command.
+                 If None, defaults to ["python", "/workspace/{script_name}"].
         
     Returns:
         A dictionary containing stdout, stderr, exit_code, and execution status.
@@ -68,6 +114,12 @@ def run_in_sandbox(
     # Map max_memory_mb to Docker memory limit format (e.g., "256m")
     mem_limit = f"{max_memory_mb}m"
     
+    # Determine the execution command
+    if command is None:
+        exec_cmd = ["python", f"/workspace/{script_name}"]
+    else:
+        exec_cmd = command
+
     docker_cmd = [
         "docker", "run",
         "--rm",                     # Auto-remove container after execution
@@ -80,9 +132,8 @@ def run_in_sandbox(
         "--pids-limit", "64",       # Prevent fork bombs
         "--user", "1000:1000",      # Run as non-root user defined in Dockerfile
         "-v", f"{workspace_dir}:/workspace:ro", # Mount code as READ-ONLY
-        "qwen-dev-swarm-sandbox:latest", # The image name we will build
-        "python", f"/workspace/{script_name}"
-    ]
+        "qwen-dev-swarm-sandbox:latest" # The image name we will build
+    ] + exec_cmd  # <--- APPEND THE COMMAND HERE
     
     try:
         logger.info(f"Executing {script_name} in isolated Docker sandbox...")

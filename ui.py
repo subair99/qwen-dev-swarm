@@ -272,12 +272,21 @@ def run_swarm_pipeline(hint_text: Optional[str] = None, approved_code: Optional[
                 return
         
     except Exception as e:
-        st.session_state.loop_status = "ERROR"
-        st.session_state.error_message = str(e)
-        update_status_pill("ERROR", f"Execution failed: {str(e)[:50]}...")
-        st.error(f"❌ **Execution Error:** {str(e)}")
-        import traceback
-        st.code(traceback.format_exc(), language="python")
+        error_str = str(e)
+        # 🛡️ Catch the websocket disconnect error gracefully
+        if "websocket.close" in error_str or "Unexpected ASGI" in error_str:
+            st.session_state.loop_status = "ERROR"
+            st.session_state.error_message = "Connection Lost"
+            update_status_pill("ERROR", "UI Disconnected")
+            st.warning("⚠️ **Connection Lost:** The UI disconnected, but the Swarm may still be running in the background. Please refresh the page.")
+        else:
+            # Handle all other exceptions with detailed tracebacks
+            st.session_state.loop_status = "ERROR"
+            st.session_state.error_message = error_str
+            update_status_pill("ERROR", f"Execution failed: {error_str[:50]}...")
+            st.error(f"❌ **Execution Error:** {error_str}")
+            import traceback
+            st.code(traceback.format_exc(), language="python")
 
 # ─────────────────────────────────────────────────────────────
 # EVENT HANDLERS
