@@ -8,11 +8,22 @@ Qwen-Dev-Swarm is a production-grade, multi-agent AI framework designed to auton
 
 ## ✨ Key Features
 
-- 🤖 **Specialized Agent Swarm**: Distinct roles (Prompt Engineer, Lead Coder, QA Analyst) collaborate to ensure high-quality, DRY, and defensively typed output.
-- 🛡️ **True Docker Sandbox Isolation**: Executes generated code in a strictly isolated, read-only, network-disabled Docker container with enforced memory, CPU, and PID limits.
-- 🧠 **Multi-Layered Prompt Defense**: Defeats obfuscation and semantic jailbreaks using a 3-tier guardrail system (Input Normalization → Regex Heuristics → Semantic LLM Analysis via `qwen-plus`).
-- 🤝 **Mandatory Human-in-the-Loop (HITL) Approval**: Requires explicit human review and approval of generated code *before* it is ever executed in the sandbox, ensuring zero-trust execution.
--  **Autonomous Self-Correction Loop**: Automatically detects runtime errors, analyzes tracebacks, and iteratively refactors code until it passes the sandbox.
+- 🤖 **Expanded Specialized Agent Swarm**: A comprehensive crew of distinct roles collaborating to ensure high-quality output:
+  - **Prompt Engineer**: Translates raw requests into hardened system prompts.
+  - **Software Architect**: Decomposes complex features into modular, DRY technical specifications.
+  - **Lead Coder**: Writes production-grade, defensively typed code.
+  - **Code Reviewer**: Scans for anti-patterns, flaky tests, and weak assertions before execution.
+  - **QA Analyst**: Adversarially audits execution outputs and tracebacks.
+  - **Test Generator**: Creates comprehensive, deterministic `pytest` unit tests.
+  - **Security Auditor**: Scans generated code for vulnerabilities (SQLi, XSS, path traversal, etc.).
+  - **Documentation Agent**: Auto-generates docstrings, type hints, and READMEs.
+- 🔁 **True Docker Sandbox Isolation**: Executes generated code and tests in a strictly isolated, read-only, network-disabled Docker container with enforced memory, CPU, and PID limits.
+- 🧠 **Multi-Layered Prompt Defense**: Defeats obfuscation and semantic jailbreaks using a 3-tier guardrail system (Input Normalization → Regex Heuristics → Semantic LLM Analysis).
+- 🤝 **Mandatory Human-in-the-Loop (HITL) Approval**: Requires explicit human review and approval of generated code _before_ it is ever executed in the sandbox, ensuring zero-trust execution.
+- 🧪 **Automated Test Generation & Execution**: Automatically generates and runs `pytest` suites to verify logical correctness, not just syntactic validity.
+- 🕵️ **Pre-Execution Security Auditing**: Scans code for vulnerabilities and assesses risk levels before human approval.
+- 📝 **Automated Documentation**: Generates comprehensive documentation, including docstrings and type hints, once code passes all tests.
+- 🔄 **Autonomous Self-Correction Loop**: Automatically detects runtime or test errors, analyzes tracebacks, and iteratively refactors code until it passes the sandbox.
 - 📊 **Robust QA Parsing**: Features a multi-stage JSON parser with heuristic fallbacks to prevent infinite retry loops caused by LLM formatting quirks.
 - 🔐 **API Key Hardening**: Features secret masking for safe UI/log display, strict `.env` file permission checks, and zero environment variable leakage to the sandbox.
 - 🖥️ **Real-Time Mission Control UI**: A beautiful Streamlit dashboard featuring live token streaming, deep-thinking visualization, and interactive HITL checkpoints.
@@ -23,11 +34,15 @@ Qwen-Dev-Swarm is a production-grade, multi-agent AI framework designed to auton
 
 1. **Blueprint Ingestion & Guardrails**: The user provides a feature request. The multi-layered guardrail normalizes the input, checks regex patterns, and runs semantic analysis to block prompt injections.
 2. **Meta-Prompt Synthesis**: The `Prompt_Engineer_Agent` translates the request into a hardened, adversarial system prompt.
-3. **Dynamic Code Generation**: A dynamically spawned `Dynamic_Lead_Coder` writes the initial implementation.
-4. **⚠️ MANDATORY HUMAN APPROVAL**: The UI pauses. The generated code is displayed, and the user must explicitly click **"Approve & Execute"** or **"Reject & Provide Hint"**.
-5. **Docker Sandbox Execution**: Upon approval, the code is written to disk and executed in an isolated Docker container (`--network none`, `--read-only`, `--user 1000:1000`).
-6. **Adversarial QA & Robust Parsing**: If the code crashes, the `QA_Analyst` analyzes the traceback. The response is parsed using a robust multi-stage JSON extractor.
-7. **Self-Correction**: The Lead Coder receives the QA feedback and rewrites the code. This loop continues until success or the retry budget is exhausted (triggering a secondary HITL hint injection).
+3. **Architectural Decomposition**: The `Software_Architect` breaks the request into modular, DRY technical specifications and testing requirements.
+4. **Dynamic Code Generation**: A dynamically spawned `Dynamic_Lead_Coder` writes the initial implementation based on the architectural blueprint.
+5. **Security Audit**: The `Security_Auditor_Agent` scans the generated code for vulnerabilities and outputs a risk assessment.
+6. **Test Generation**: The `Test_Generator_Agent` creates comprehensive, deterministic `pytest` unit tests for the implementation.
+7. **⚠️ MANDATORY HUMAN APPROVAL**: The UI pauses. The generated code, tests, and security report are displayed. The user must explicitly click **"Approve & Execute"** or **"Reject & Provide Hint"**.
+8. **Docker Sandbox Execution**: Upon approval, the main script is written to disk and executed in an isolated Docker container (`--network none`, `--read-only`, `--user 1000:1000`).
+9. **Test Execution**: If the main script passes, the generated `pytest` suite is executed in the sandbox to verify correctness.
+10. **Adversarial QA & Self-Correction**: If the code or tests fail, the `QA_Analyst` and `Code_Reviewer` analyze the tracebacks. The Lead Coder receives the feedback and rewrites the code. This loop continues until success or the retry budget is exhausted.
+11. **Documentation Generation**: Once all tests pass, the `Documentation_Agent` generates comprehensive docstrings, type hints, and a README for the final code.
 
 ---
 
@@ -35,28 +50,41 @@ Qwen-Dev-Swarm is a production-grade, multi-agent AI framework designed to auton
 
 ```text
 qwen-dev-swarm/
+├── .streamlit/
+│   └── config.toml                 # Streamlit UI configuration
 ├── config/
 │   ├── __init__.py
-│   └── settings.py          # Centralized config, LLM client, API key masking, and .env permission checks
+│   └── settings.py                 # Modular configuration settings
+├── scripts/
+│   └── check_deps.sh               # Utility script to verify dependencies
 ├── swarm/
 │   ├── __init__.py
-│   ├── agents.py            # QwenAgent base class, StreamParser, and Swarm definitions
-│   └── guardrails.py        # Multi-layered prompt injection & path traversal protections
-├── orchestrator.py          # Core self-correction loop, HITL checkpoints, and robust QA parsing
-├── sandbox.py               # Secure Docker-based subprocess execution
-├── ui.py                    # Streamlit Mission Control Dashboard with HITL UI
-├── test_guardrails.py       # Comprehensive pytest suite for security guardrails
-├── test_connection.py       # Quick API connectivity checker
-├── Dockerfile.sandbox       # Minimal, non-root Python image for the secure sandbox
-├── uv.lock                  # Cryptographically pinned dependency lockfile
-├── pyproject.toml           # uv project configuration
-├── .env                     # Environment variables (API keys) - MUST be chmod 600
-└── README.md
+│   ├── agents.py                   # Core definitions for the specialized AI agents
+│   └── guardrails.py               # Multi-layered prompt defense & path sanitization
+├── generated_codes/                # Output directory for the swarm's generated code
+│   ├── eratosthenes_algorithm.py
+│   └── fibonacci_sequence.py
+├── .gitignore
+├── .python-version                 # Python version pin (3.12+)
+├── Dockerfile.sandbox              # Docker config for the secure, isolated code execution environment
+├── LICENSE
+├── README.md                       # Project documentation
+├── config.py                       # Legacy/root configuration file (env vars)
+├── generated_script.py             # Temporary file for the latest generated code
+├── orchestrator.py                 # The main engine that manages the agent workflow and Docker execution
+├── pyproject.toml                  # Python project metadata
+├── requirements.txt                # Fallback dependencies list
+├── sandbox.py                      # Manages the Docker container lifecycle and resource limits
+├── test_connection.py              # Utility to verify Qwen API connectivity
+├── test_generated_script.py        # Temporary file for the generated pytest suite
+├── test_guardrails.py              # Pytest suite to test the security guardrails
+├── ui.py                           # The Streamlit frontend (Mission Control Dashboard)
+└── uv.lock                         # Cryptographically locked dependencies for `uv`
 ```
 
 ---
 
-## 🛠️ Prerequisites
+## 🐛 Prerequisites
 
 - **Python 3.12+**
 - **[uv](https://docs.astral.sh/uv/)** (Recommended package manager)
@@ -79,11 +107,16 @@ cd qwen-dev-swarm
 uv sync
 ```
 
-### 3. Build the Secure Sandbox Image
-The sandbox requires a dedicated, minimal Docker image to ensure true isolation.
-```bash
-docker build -f Dockerfile.sandbox -t qwen-dev-swarm-sandbox:latest .
-```
+### 3. Automated Sandbox Provisioning
+
+No manual Docker builds required! The system features an **Always-Fresh Docker Image Builder** that runs automatically in the background whenever the application starts. 
+
+It automatically:
+- Removes any outdated sandbox images.
+- Rebuilds a completely fresh, minimal Docker image from `Dockerfile.sandbox` (including `pytest` for automated testing).
+- Ensures the execution environment is always perfectly synchronized with the latest project dependencies.
+
+*Just launch the app, and the sandbox will be ready for you.*
 
 ### 4. Configure Environment Variables
 Create a `.env` file in the project root and add your API credentials:
@@ -93,7 +126,7 @@ Create a `.env` file in the project root and add your API credentials:
 QWEN_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
 
 # Optional: Override the default base URL (Defaults to standard public DashScope)
-# QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+# QWEN_BASE_URL=https://ws-zp9gpq4ly3nzvc4s.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
 
 # Optional: Override the main swarm model
 # MODEL_NAME=qwen3.7-max
@@ -178,37 +211,88 @@ The `sanitize_file_path` guardrail strictly isolates file writes to the base fil
 
 ---
 
-## 🧠 Agent Prompt Engineering
-
-The swarm's quality is driven by its system prompts. Key mandates injected into the agents include:
-- **No Flaky Tests**: The Architect and QA Analyst explicitly forbid time-based assertions (`time.time()`) to ensure CI reliability.
-- **DRY & I/O Optimization**: The Lead Coder is forced to consolidate redundant loops and implement stateful dirty-tracking for I/O operations.
-- **Defensive Typing**: Strict rejection of booleans masquerading as integers, and mandatory bounds checking.
-
----
-
-## 🤝 Human-in-the-Loop (HITL)
-
-The system features two distinct HITL checkpoints to ensure absolute control over the autonomous agents:
-
-### 1. Mandatory Pre-Execution Approval
-Before *any* code is executed in the Docker sandbox, the UI pauses and requires the user to explicitly review the generated script. You must click **"Approve & Execute"** to proceed, or **"Reject & Provide Hint"** to force the coder to rewrite it.
-
-### 2. Architectural Rescue (Retry Budget Exhausted)
-If the swarm fails to fix a bug after `max_retries` (default: 3), it triggers a `hitl_paused` event. The UI will display a form allowing you to inject a "Developer Hint" to guide the agents out of the loop. 
-
-**Example Hint:**
-> *"Change the division variable to check for zero, or import the math module explicitly. Also, remove the flaky time-based assertion in the test suite."*
-
-The swarm will absorb this hint, reset its retry budget, and attempt the correction again with the new context.
-
----
-
 ## 📜 License
 
 This project is provided as-is for educational and development purposes. 
 
 ---
 
-*Built with 🧠 Qwen, 🐍 Python, 🎈 Streamlitand, and 🐳 Docker.*
+## 🛠️ Built With
+
+[![Qwen](https://img.shields.io/badge/Qwen-FF6600?style=for-the-badge&logo=alibabacloud&logoColor=white)](https://qwenlm.github.io/)
+[![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://streamlit.io/)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
+
+---
+
+## ☁️ Deploying on Alibaba Cloud (ECS)
+
+To run Qwen-Dev-Swarm in the cloud, we recommend using an **Alibaba Cloud Elastic Compute Service (ECS)** instance. This provides the necessary Docker support and persistent environment for the Streamlit dashboard.
+
+### Step 1: Provision an ECS Instance
+
+1. Log in to the [Alibaba Cloud Console](https://ecs.console.aliyun.com/) and navigate to **ECS**.
+2. Click **Create Instance** and configure the following:
+   - **Instance Type**: Select a general-purpose instance (e.g., `ecs.g7.large` or `ecs.c7.large`) with at least **2 vCPUs and 4GB RAM** (8GB+ recommended for Docker + LLM processing).
+   - **OS Image**: Choose **Ubuntu 22.04 64-bit** or **Ubuntu 24.04 64-bit**.
+   - **Storage**: At least 40GB ESSD.
+3. **Security Group (Crucial)**: Ensure your Security Group allows inbound traffic on:
+   - `Port 22` (SSH)
+   - `Port 8501` (Streamlit UI) - *Set source to `0.0.0.0/0` or your specific IP.*
+
+### Step 2: Connect and Install Prerequisites
+
+SSH into your new instance:
+```bash
+ssh root@<YOUR_ECS_PUBLIC_IP>
 ```
+
+Update system and install Docker:
+```bash
+apt update && apt upgrade -y
+curl -fsSL https://get.docker.com -o get-docker.sh
+sh get-docker.sh
+systemctl enable docker && systemctl start docker
+```
+
+Install uv (handles Python 3.12 automatically):
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.local/bin/env
+```
+
+### Step 3: Clone and Configure the Project
+
+Clone the repository:
+```bash
+git clone <your-repo-url>
+cd qwen-dev-swarm
+```
+
+Install project dependencies:
+```bash
+uv sync
+```
+
+Create and configure your environment variables:
+```bash
+nano .env
+```
+Paste your `QWEN_API_KEY` and other required variables into the `.env` file, then save and exit.
+
+### Step 4: Launch the Application
+
+Because the app is running on a remote server, you must bind Streamlit to `0.0.0.0` so it accepts external connections:
+```bash
+uv run streamlit run ui.py --server.port 8501 --server.address 0.0.0.0 --server.enableCORS false
+```
+
+### Step 5: Access the Mission Control UI
+
+Open your web browser and navigate to:
+```bash
+http://<YOUR_ECS_PUBLIC_IP>:8501
+```
+
+---
