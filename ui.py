@@ -9,7 +9,7 @@ from orchestrator import QwenDevSwarmOrchestrator
 # ─────────────────────────────────────────────────────────────
 st.set_page_config(layout="wide", page_title="Qwen-Dev-Swarm Mission Control")
 
-# ─────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 # CUSTOM STYLING
 # ─────────────────────────────────────────────────────────────
 st.markdown("""
@@ -38,6 +38,14 @@ st.markdown("""
         font-family: 'Courier New', monospace;
         font-size: 0.85rem;
         line-height: 1.4;
+    }
+    
+    /* Force sidebar buttons to have consistent height */
+    .stSidebar button[kind="secondary"] {
+        min-height: 80px !important;
+        height: auto !important;
+        white-space: normal !important;
+        line-height: 1.5 !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -106,13 +114,13 @@ with st.sidebar:
     
     with col_cancel:
         cancel_btn = st.button(
-            "⏹️ Cancel",
+            "⏹️ Cancel Swarm",  # ✅ UPDATED: Changed from "Cancel" to "Cancel Run"
             disabled=(st.session_state.loop_status not in ("RUNNING", "AWAITING_APPROVAL", "REJECTING", "PAUSED")),
             use_container_width=True
         )
     
     if st.session_state.loop_status in ("RUNNING", "PAUSED", "AWAITING_APPROVAL", "REJECTING"):
-        st.info(f"📊 Current Retry: {st.session_state.retry_count + 1} / {st.session_state.orchestrator.max_retries}")
+        st.info(f" Current Retry: {st.session_state.retry_count + 1} / {st.session_state.orchestrator.max_retries}")
 
 # ─────────────────────────────────────────────────────────────
 # STATUS PILL RENDERER
@@ -129,7 +137,7 @@ def update_status_pill(state_key: str, custom_msg: Optional[str] = None):
         "QA": ("🔍 QA EVALUATION", "background-color: #581c87; color: #a855f7;"),
         "AWAITING_APPROVAL": ("⚠️ AWAITING HUMAN APPROVAL", "background-color: #78350f; color: #fbbf24;"),
         "REJECTING": ("📝 PROVIDING REJECTION HINT", "background-color: #78350f; color: #fbbf24;"),
-        "PAUSED": ("🔴 HITL PAUSED FOR REVIEW", "background-color: #7f1d1d; color: #ef4444;"),
+        "PAUSED": (" HITL PAUSED FOR REVIEW", "background-color: #7f1d1d; color: #ef4444;"),
         "BLOCKED": ("🛑 SECURITY BLOCKED", "background-color: #7f1d1d; color: #f87171;"),
         "COMPLETED": ("✅ COMPLETED SUCCESSFULLY", "background-color: #064e3b; color: #10b981;"),
         "ERROR": ("❌ EXECUTION ERROR", "background-color: #7f1d1d; color: #f87171;")
@@ -155,7 +163,7 @@ with col1:
     hitl_container = st.container()
 
 with col2:
-    st.subheader("💻 Compiled Script Workspace")
+    st.subheader(" Compiled Script Workspace")
     code_container = st.empty()
     
     display_code = st.session_state.final_code or st.session_state.current_code_text
@@ -309,7 +317,7 @@ if cancel_btn:
     st.rerun()
 
 # ─────────────────────────────────────────────────────────────
-# 🛡️ HITL APPROVAL INTERFACE (Mandatory Security Review)
+# ️ HITL APPROVAL INTERFACE (Mandatory Security Review)
 # ─────────────────────────────────────────────────────────────
 if st.session_state.loop_status == "AWAITING_APPROVAL":
     with hitl_container:

@@ -6,44 +6,36 @@ import tempfile
 import logging
 from pathlib import Path
 from typing import Dict, Any
+from datetime import datetime
 
 # ─────────────────────────────────────────────────────────────
-# 🤖 AUTOMATIC DOCKER IMAGE BUILDER
+# 🤖 ALWAYS-FRESH DOCKER IMAGE BUILDER (Rebuilds on every start)
 # ─────────────────────────────────────────────────────────────
 def _ensure_sandbox_image():
-    """Checks if the Docker image exists and builds it if missing."""
+    """Always deletes the existing Docker image and rebuilds it from scratch."""
     image_name = "qwen-dev-swarm-sandbox:latest"
     dockerfile_path = "Dockerfile.sandbox"
     
-    try:
-        # 1. Check if image exists
-        check_result = subprocess.run(
-            ["docker", "image", "inspect", image_name],
-            capture_output=True, text=True
-        )
+    if not os.path.exists(dockerfile_path):
+        print(f"❌ {dockerfile_path} not found.")
+        sys.exit(1)
+
+    # 1. Forcefully delete the existing image (ignores errors if it doesn't exist yet)
+    print(f"️ Removing old sandbox image (if it exists)...")
+    subprocess.run(["docker", "rmi", "-f", image_name], capture_output=True, text=True)
+    
+    # 2. Build a completely fresh image
+    print(f"🏗️ Building '{image_name}' from {dockerfile_path}...")
+    build_result = subprocess.run(
+        ["docker", "build", "-t", image_name, "-f", dockerfile_path, "."],
+        capture_output=True, text=True
+    )
+    
+    if build_result.returncode != 0:
+        print(f"❌ Failed to build Docker image:\n{build_result.stderr}")
+        sys.exit(1)
         
-        if check_result.returncode != 0:
-            print(f"📦 Sandbox image missing. Building '{image_name}' automatically...")
-            
-            # 2. Build the image
-            build_result = subprocess.run(
-                ["docker", "build", "-t", image_name, "-f", dockerfile_path, "."],
-                capture_output=True, text=True
-            )
-            
-            if build_result.returncode != 0:
-                print(f" Failed to build Docker image:\n{build_result.stderr}")
-                sys.exit(1)
-            print("✅ Sandbox image built successfully!")
-        else:
-            print(f"✅ Sandbox image '{image_name}' is ready.")
-            
-    except FileNotFoundError:
-        print("❌ Docker command not found. Is Docker installed and in your PATH?")
-        sys.exit(1)
-    except Exception as e:
-        print(f"❌ Docker check failed: {e}")
-        sys.exit(1)
+    print("✅ Sandbox image built successfully!")
 
 # Run the check immediately when sandbox.py is imported
 _ensure_sandbox_image()

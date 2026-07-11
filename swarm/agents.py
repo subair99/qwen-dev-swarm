@@ -314,6 +314,9 @@ def create_swarm_agents() -> Dict[str, QwenAgent]:
             "- Analyze the request for hidden technical traps (e.g., concurrency race conditions, I/O bottlenecks).\n"
             "- Inject explicit algorithmic requirements into the prompt.\n"
             "- Enforce strict structural guardrails: mandate type validation, negative bounds checking, and DRY principles.\n"
+            "- CRITICAL: The code will be executed in a non-interactive sandbox without command-line arguments. "
+            "Do NOT instruct the Lead Coder to build CLI tools using argparse or sys.argv. Instruct it to use "
+            "hardcoded default values (e.g., n=10) or define functions that accept parameters.\n"
             "- Output ONLY the final compiled system prompt. Do not include conversational preambles."
         )
     )
@@ -353,12 +356,19 @@ def create_swarm_agents() -> Dict[str, QwenAgent]:
             "Verify actual output values, not just counts or lengths. Include tests for boundary values, "
             "known reference values, type rejections, and edge cases.\n"
             "5. FORMATTING: Always wrap your code in standard markdown code blocks (```python ... ```). "
-            "Do not include conversational filler before or after the code block."
-            "6. STANDARD LIBRARY ONLY: You are executing in a strictly isolated Docker sandbox. "
-            "You MUST ONLY use Python standard library modules (e.g., os, sys, json, math, re). "
-            "DO NOT import external libraries like requests, pandas, numpy, or bs4, as they will cause an immediate crash."
+            "Do not include conversational filler before or after the code block.\n"
+            "6. CRITICAL: STANDARD LIBRARY ONLY. You are executing in a strictly isolated, minimal Docker sandbox. "
+            "You MUST ONLY use Python standard library modules (e.g., os, sys, json, math, re, datetime). "
+            "DO NOT import external libraries like requests, pandas, numpy, bs4, or pydantic, as they will cause an immediate crash.\n"
             "7. NO TEST IMPORTS IN MAIN SCRIPT: Never import 'pytest' or any testing frameworks in the main generated script. "
-            "The main script must contain ONLY the core logic and execution code. Testing logic will be handled separately."
+            "The main script must contain ONLY the core logic and execution code. Testing logic will be handled separately.\n"
+            "8. LARGE INTEGER LIMIT BYPASS: Python 3.11+ restricts integer-to-string conversion to 4300 digits by default "
+            "to prevent DoS attacks. If your code calculates or prints massive numbers (e.g., large Fibonacci sequences, "
+            "factorials), you MUST include `import sys` and `sys.set_int_max_str_digits(0)` at the very top of the script "
+            "to disable this limit and prevent ValueErrors.\n"
+            "9. NO COMMAND-LINE ARGUMENTS: Do not use argparse or sys.argv for required inputs. The script will be executed "
+            "in a non-interactive sandbox environment without command-line arguments. Use hardcoded default values "
+            "(e.g., n=10) or define functions that accept parameters instead of requiring CLI input."
         )
     )
  

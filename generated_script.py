@@ -1,90 +1,114 @@
-from __future__ import annotations
+"""
+Fibonacci Sequence Module
 
-import random
-import statistics
+Provides highly optimized, memory-efficient generation of Fibonacci numbers.
+Standardizes on generating `n` terms (1-indexed count, 0-indexed mathematical values).
+"""
+
+from typing import Iterator, List
 
 
-def generate_dataset(size: int = 1000, seed: int = 42, min_val: int = 1, max_val: int = 100) -> tuple[int, ...]:
+def _validate_input(n: int) -> None:
     """
-    Factory function to generate a reproducible dataset of random integers.
-    Returns an immutable tuple to prevent accidental mutation.
+    Validates the input parameter `n` for Fibonacci generation.
+    
+    Args:
+        n (int): The number of terms to generate.
+        
+    Raises:
+        TypeError: If `n` is not strictly an integer (e.g., float, string, bool).
+        ValueError: If `n` is negative.
     """
-    random.seed(seed)
-    return tuple(random.randint(min_val, max_val) for _ in range(size))
+    if not isinstance(n, int) or isinstance(n, bool):
+        raise TypeError(f"Parameter 'n' must be strictly an integer, got {type(n).__name__}.")
+    if n < 0:
+        raise ValueError(f"Parameter 'n' must be non-negative (n >= 0), got {n}.")
 
 
-# The generated dataset immediately cast to an immutable tuple at the module level
-DATASET: tuple[int, ...] = generate_dataset()
-
-
-def validate_dataset(data: tuple[int, ...]) -> None:
+def fibonacci_generator(n: int) -> Iterator[int]:
     """
-    Performs strict runtime type validation and negative bounds checking.
-    Fails fast with TypeError or ValueError if constraints are violated.
+    Generates the Fibonacci sequence up to `n` terms using an iterative generator.
+    
+    This function standardizes on yielding exactly `n` terms. 
+    - For n=0, it yields nothing (empty sequence).
+    - For n=1, it yields [0].
+    - For n=2, it yields [0, 1], and so on.
+    
+    Args:
+        n (int): The number of Fibonacci terms to generate. Must be >= 0.
+        
+    Yields:
+        int: The next Fibonacci number in the sequence.
+        
+    Raises:
+        TypeError: If `n` is not an integer.
+        ValueError: If `n` is negative.
+        
+    Complexity:
+        Time: O(n) - Iterates exactly n times.
+        Space: O(1) - Auxiliary space is constant due to the generator pattern.
     """
-    for item in data:
-        # Strict type check: must be exactly int, not a subclass like bool
-        if type(item) is not int:
-            raise TypeError(
-                f"Type validation failed: encountered {type(item).__name__}, expected strictly 'int'."
-            )
-        # Negative bounds check
-        if item < 0:
-            raise ValueError(
-                f"Negative bounds check failed: encountered {item}, expected non-negative integer (>= 0)."
-            )
+    _validate_input(n)
+    
+    a, b = 0, 1
+    for _ in range(n):
+        yield a
+        a, b = b, a + b
 
 
-def analyze_dataset(data: tuple[int, ...]) -> dict[str, float | list[int]]:
+def get_fibonacci_sequence(n: int) -> List[int]:
     """
-    Encapsulates statistical calculations. Accepts an immutable dataset 
-    and returns a structured dictionary of results.
+    Retrieves the Fibonacci sequence up to `n` terms as a list.
+    
+    This is a convenience wrapper around `fibonacci_generator` for cases 
+    where the entire sequence is required in memory at once.
+    
+    Args:
+        n (int): The number of Fibonacci terms to generate. Must be >= 0.
+        
+    Returns:
+        List[int]: A list containing the first `n` Fibonacci numbers.
+        
+    Raises:
+        TypeError: If `n` is not an integer.
+        ValueError: If `n` is negative.
+        
+    Complexity:
+        Time: O(n)
+        Space: O(n) - Stores all n terms in a list.
     """
-    # Validate before performing any calculations
-    validate_dataset(data)
-    
-    # Mean: O(N) time complexity
-    mean_val: float = sum(data) / len(data)
-    
-    # Median: O(N log N) via standard library sorting overhead
-    median_val: float = statistics.median(data)
-    
-    # Mode: multimode used to correctly identify all modes and avoid traps
-    mode_val: list[int] = statistics.multimode(data)
-    
-    # Standard Deviation: Sample standard deviation (Bessel's correction applied)
-    stdev_val: float = statistics.stdev(data)
-    
-    return {
-        "mean": mean_val,
-        "median": median_val,
-        "mode": mode_val,
-        "standard_deviation": stdev_val
-    }
-
-
-def present_results(results: dict[str, float | list[int]]) -> None:
-    """
-    Encapsulates output formatting. Prints results in a clean, aligned, 
-    human-readable format.
-    """
-    print("=" * 45)
-    print("       STATISTICAL ANALYSIS RESULTS")
-    print("=" * 45)
-    
-    print(f"Mean:               {results['mean']:.4f}")
-    print(f"Median:             {results['median']:.4f}")
-    
-    # Format mode as a comma-separated list
-    modes = results['mode']
-    mode_str = ", ".join(str(m) for m in modes)
-    print(f"Mode(s):            {mode_str}")
-    
-    print(f"Standard Deviation: {results['standard_deviation']:.4f}")
-    print("=" * 45)
+    return list(fibonacci_generator(n))
 
 
 if __name__ == "__main__":
-    # Execute analysis on the module-level immutable dataset
-    analysis_results = analyze_dataset(DATASET)
-    present_results(analysis_results)
+    DEFAULT_N = 50
+    
+    print(f"--- Fibonacci Sequence (First {DEFAULT_N} terms) ---")
+    
+    # Consuming the generator and formatting output cleanly
+    sequence = get_fibonacci_sequence(DEFAULT_N)
+    
+    # Print as a comma-separated string to avoid overwhelming the standard output buffer
+    print(", ".join(str(num) for num in sequence))
+    
+    print("\n--- Edge Case Demonstrations ---")
+    print(f"n = 0 (Yields nothing): {get_fibonacci_sequence(0)}")
+    print(f"n = 1 (Yields first term): {get_fibonacci_sequence(1)}")
+    print(f"n = 2 (Yields first two terms): {get_fibonacci_sequence(2)}")
+    
+    print("\n--- Exception Handling Demonstrations ---")
+    
+    try:
+        get_fibonacci_sequence(-5)
+    except ValueError as e:
+        print(f"ValueError caught: {e}")
+        
+    try:
+        get_fibonacci_sequence(10.5)
+    except TypeError as e:
+        print(f"TypeError caught: {e}")
+        
+    try:
+        get_fibonacci_sequence(True)
+    except TypeError as e:
+        print(f"TypeError caught: {e}")
