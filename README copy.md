@@ -281,16 +281,12 @@ nano .env
 ```
 Paste your `QWEN_API_KEY` and other required variables into the `.env` file, then save and exit.
 
----
-
 ### Step 4: Launch the Application
 
 Because the app is running on a remote server, you must bind Streamlit to `0.0.0.0` so it accepts external connections:
 ```bash
 uv run streamlit run ui.py --server.port 8501 --server.address 0.0.0.0 --server.enableCORS false
 ```
-
----
 
 ### Step 5: Access the Mission Control UI
 
