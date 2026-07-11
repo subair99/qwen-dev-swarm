@@ -225,3 +225,78 @@ This project is provided as-is for educational and development purposes.
 [![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
 
 ---
+
+## ☁️ Deploying on Alibaba Cloud (ECS)
+
+To run Qwen-Dev-Swarm in the cloud, we recommend using an **Alibaba Cloud Elastic Compute Service (ECS)** instance. This provides the necessary Docker support and persistent environment for the Streamlit dashboard.
+
+### Step 1: Provision an ECS Instance
+
+1. Log in to the [Alibaba Cloud Console](https://ecs.console.aliyun.com/) and navigate to **ECS**.
+2. Click **Create Instance** and configure the following:
+   - **Instance Type**: Select a general-purpose instance (e.g., `ecs.g7.large` or `ecs.c7.large`) with at least **2 vCPUs and 4GB RAM** (8GB+ recommended for Docker + LLM processing).
+   - **OS Image**: Choose **Ubuntu 22.04 64-bit** or **Ubuntu 24.04 64-bit**.
+   - **Storage**: At least 40GB ESSD.
+3. **Security Group (Crucial)**: Ensure your Security Group allows inbound traffic on:
+   - `Port 22` (SSH)
+   - `Port 8501` (Streamlit UI) - *Set source to `0.0.0.0/0` or your specific IP.*
+
+### Step 2: Connect and Install Prerequisites
+
+SSH into your new instance:
+```bash
+ssh root@<YOUR_ECS_PUBLIC_IP>
+```
+
+Update system and install Docker:
+```bash
+apt update && apt upgrade -y
+curl -fsSL https://get.docker.com -o get-docker.sh
+sh get-docker.sh
+systemctl enable docker && systemctl start docker
+```
+
+Install uv (handles Python 3.12 automatically):
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.local/bin/env
+```
+
+### Step 3: Clone and Configure the Project
+
+Clone the repository:
+```bash
+git clone <your-repo-url>
+cd qwen-dev-swarm
+```
+
+Install project dependencies:
+```bash
+uv sync
+```
+
+Create and configure your environment variables:
+```bash
+nano .env
+```
+Paste your `QWEN_API_KEY` and other required variables into the `.env` file, then save and exit.
+
+---
+
+### Step 4: Launch the Application
+
+Because the app is running on a remote server, you must bind Streamlit to `0.0.0.0` so it accepts external connections:
+```bash
+uv run streamlit run ui.py --server.port 8501 --server.address 0.0.0.0 --server.enableCORS false
+```
+
+---
+
+### Step 5: Access the Mission Control UI
+
+Open your web browser and navigate to:
+```bash
+http://<YOUR_ECS_PUBLIC_IP>:8501
+```
+
+---
