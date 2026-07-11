@@ -217,9 +217,7 @@ This project is provided as-is for educational and development purposes.
 
 ---
 
-## 🛠️ Built With
-
-Built with 🧠 Qwen, 🐍 Python, 🎈 Streamlit, and 🐳 Docker.
+## 🧠 Built With
 
 [![Qwen](https://img.shields.io/badge/Qwen-FF6600?style=for-the-badge&logo=alibabacloud&logoColor=white)](https://qwenlm.github.io/)
 [![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
