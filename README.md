@@ -17,7 +17,7 @@ Qwen-Dev-Swarm is a production-grade, multi-agent AI framework designed to auton
   - **Test Generator**: Creates comprehensive, deterministic `pytest` unit tests.
   - **Security Auditor**: Scans generated code for vulnerabilities (SQLi, XSS, path traversal, etc.).
   - **Documentation Agent**: Auto-generates docstrings, type hints, and READMEs.
-- 🔁 **True Docker Sandbox Isolation**: Executes generated code and tests in a strictly isolated, read-only, network-disabled Docker container with enforced memory, CPU, and PID limits.
+- 📦 **True Docker Sandbox Isolation**: Executes generated code and tests in a strictly isolated, read-only, network-disabled Docker container with enforced memory, CPU, and PID limits.
 - 🧠 **Multi-Layered Prompt Defense**: Defeats obfuscation and semantic jailbreaks using a 3-tier guardrail system (Input Normalization → Regex Heuristics → Semantic LLM Analysis).
 - 🤝 **Mandatory Human-in-the-Loop (HITL) Approval**: Requires explicit human review and approval of generated code _before_ it is ever executed in the sandbox, ensuring zero-trust execution.
 - 🧪 **Automated Test Generation & Execution**: Automatically generates and runs `pytest` suites to verify logical correctness, not just syntactic validity.
@@ -93,7 +93,7 @@ qwen-dev-swarm/
 
 ---
 
-## 🚀 Installation & Setup
+## 🔌 Installation & Setup
 
 ### 1. Clone the Repository
 ```bash
