@@ -217,5 +217,8 @@ This project is provided as-is for educational and development purposes.
 
 ---
 
-*Built with 🧠 Qwen, 🐍 Python, 🎈 Streamlitand, and 🐳 Docker.*
-```
+## 🛠️ Built With
+
+Built with 🧠 Qwen, 🐍 Python, 🎈 Streamlit, and 🐳 Docker.
+
+---
