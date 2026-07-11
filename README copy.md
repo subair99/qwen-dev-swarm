@@ -221,4 +221,9 @@ This project is provided as-is for educational and development purposes.
 
 Built with 🧠 Qwen, 🐍 Python, 🎈 Streamlit, and 🐳 Docker.
 
+[![Qwen](https://img.shields.io/badge/Qwen-FF6600?style=for-the-badge&logo=alibabacloud&logoColor=white)](https://qwenlm.github.io/)
+[![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://streamlit.io/)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
+
 ---
