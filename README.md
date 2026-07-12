@@ -63,13 +63,14 @@ qwen-dev-swarm/
 │   └── guardrails.py               # Multi-layered prompt defense & path sanitization
 ├── .gitignore
 ├── .python-version                 # Python version pin (3.12+)
-├── Dockerfile.sandbox              # Docker config for the secure, isolated code execution environment
-├── LICENSE
-├── README.md                       # Project documentation
 ├── config.py                       # Legacy/root configuration file (env vars)
+├── Dockerfile.sandbox              # Docker config for the secure, isolated code execution
 ├── generated_script.py             # Temporary file for the latest generated code
-├── orchestrator.py                 # The main engine that manages the agent workflow and Docker execution
+├── inspiration.md                  # Reasons, lessons, process, challenges and reflection  
+├── LICENSE                         # Project licence specification
+├── orchestrator.py                 # The main engine that manages the agent workflow and Docker
 ├── pyproject.toml                  # Python project metadata
+├── README.md                       # Project documentation
 ├── requirements.txt                # Fallback dependencies list
 ├── sandbox.py                      # Manages the Docker container lifecycle and resource limits
 ├── test_connection.py              # Utility to verify Qwen API connectivity

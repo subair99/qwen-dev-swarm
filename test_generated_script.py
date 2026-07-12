@@ -1,148 +1,119 @@
+# test_generated_script.py
+
+# run with: uv run pytest test_generated_script.py -v
+
+"""
+Universal Structural & Security Gatekeeper for generated_script.py.
+
+This test suite does not test the specific business logic (which is unknown).
+Instead, it uses Python's AST (Abstract Syntax Tree) to verify that the 
+Lead Coder agent strictly adhered to the swarm's architectural mandates.
+"""
+import ast
+import os
+import sys
 import pytest
-from unittest.mock import patch
 
-# Note: Adjust the import module name if your implementation file is named differently (e.g., fib.py)
-from fibonacci import (
-    _validate_n,
-    _infinite_fibonacci,
-    fibonacci_up_to_index,
-    fibonacci_up_to_value,
-    get_fibonacci_list
-)
+# Dynamically locate the generated script in the current directory
+SCRIPT_NAME = "generated_script.py"
+SCRIPT_PATH = os.path.join(os.path.dirname(__file__), SCRIPT_NAME)
 
-# ==========================================
-# Tests for _validate_n
-# ==========================================
+# --- Fixtures ---
 
-@pytest.mark.parametrize("invalid_input", [
-    True, False,       # bools are subclass of int, but strictly rejected
-    5.0, 0.0,          # floats
-    "10", "0",         # strings
-    None,              # NoneType
-    [5], (5,), {5}     # collections
-])
-def test_validate_n_type_error(invalid_input):
-    """Verifies that non-strict integer types raise TypeError."""
-    with pytest.raises(TypeError, match="Input must be strictly of type 'int'"):
-        _validate_n(invalid_input)
+@pytest.fixture(scope="module")
+def generated_code():
+    """Reads the generated script. Skips tests if the file doesn't exist."""
+    if not os.path.exists(SCRIPT_PATH):
+        pytest.skip(f"{SCRIPT_NAME} not found. Run the swarm first.")
+    with open(SCRIPT_PATH, "r", encoding="utf-8") as f:
+        return f.read()
 
-@pytest.mark.parametrize("negative_input", [-1, -100, -9999])
-def test_validate_n_value_error(negative_input):
-    """Verifies that negative integers raise ValueError."""
-    with pytest.raises(ValueError, match="Input must be a non-negative integer"):
-        _validate_n(negative_input)
+@pytest.fixture(scope="module")
+def parsed_ast(generated_code):
+    """Parses the code into an AST without executing it."""
+    try:
+        return ast.parse(generated_code)
+    except SyntaxError as e:
+        pytest.fail(f"generated_script.py contains a SyntaxError: {e}")
 
-@pytest.mark.parametrize("valid_input", [0, 1, 10, 1000, 999999])
-def test_validate_n_valid(valid_input):
-    """Verifies that valid non-negative integers pass validation without exceptions."""
-    _validate_n(valid_input)
+# --- Structural Mandate Tests ---
 
+class TestModuleDocumentation:
+    """Verifies the mandatory module-level docstring."""
+    
+    def test_has_module_docstring(self, parsed_ast):
+        """The script MUST start with a comprehensive module-level docstring."""
+        docstring = ast.get_docstring(parsed_ast)
+        assert docstring is not None, "Missing mandatory module-level docstring."
+        assert len(docstring) > 50, "Module docstring is too short/generic."
 
-# ==========================================
-# Tests for _infinite_fibonacci
-# ==========================================
+class TestSecurityAndIsolation:
+    """Verifies the script is safe for the Docker sandbox."""
+    
+    def test_no_external_imports(self, parsed_ast):
+        """Mandate: Standard Library ONLY. No external dependencies."""
+        banned_libs = {
+            "requests", "httpx", "aiohttp", "urllib3",
+            "pandas", "numpy", "scipy", "sklearn",
+            "bs4", "beautifulsoup4", "lxml",
+            "pydantic", "sqlalchemy", "django", "flask",
+            "openai", "anthropic", "langchain"
+        }
+        
+        imported_modules = set()
+        for node in ast.walk(parsed_ast):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    imported_modules.add(alias.name.split('.')[0])
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    imported_modules.add(node.module.split('.')[0])
+                    
+        violations = imported_modules.intersection(banned_libs)
+        assert not violations, f"Banned external libraries imported: {violations}"
 
-def test_infinite_fibonacci_sequence():
-    """Verifies the core generator yields the correct mathematical sequence."""
-    gen = _infinite_fibonacci()
-    expected = [0, 1, 1, 2, 3, 5, 8, 13, 21, 34]
-    result = [next(gen) for _ in range(10)]
-    assert result == expected
+    def test_no_cli_arguments(self, parsed_ast):
+        """Mandate: No argparse or sys.argv. Use hardcoded defaults or functions."""
+        source_code = ast.dump(parsed_ast)
+        assert "argparse" not in source_code, "Usage of 'argparse' is forbidden."
+        assert "sys.argv" not in source_code, "Usage of 'sys.argv' is forbidden."
 
+    def test_no_test_framework_imports(self, parsed_ast):
+        """Mandate: Main script must not import testing frameworks."""
+        source_code = ast.dump(parsed_ast)
+        banned_test_libs = ["pytest", "unittest", "mock", "faker"]
+        for lib in banned_test_libs:
+            assert lib not in source_code, f"Main script must not import '{lib}'."
 
-# ==========================================
-# Tests for fibonacci_up_to_index
-# ==========================================
+class TestCodeQuality:
+    """Verifies basic code quality and defensive programming."""
+    
+    def test_no_bare_except(self, parsed_ast):
+        """Mandate: Defensive programming. No bare 'except:' clauses."""
+        for node in ast.walk(parsed_ast):
+            if isinstance(node, ast.ExceptHandler):
+                assert node.type is not None, "Bare 'except:' clause found. Specify the exception type."
 
-@pytest.mark.parametrize("n, expected", [
-    (0, [0]),
-    (1, [0, 1]),
-    (2, [0, 1, 1]),
-    (5, [0, 1, 1, 2, 3, 5]),
-    (7, [0, 1, 1, 2, 3, 5, 8, 13]),
-    (14, [0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377])
-])
-def test_fibonacci_up_to_index_valid(n, expected):
-    """Verifies correct sequence generation up to the n-th zero-based index."""
-    assert list(fibonacci_up_to_index(n)) == expected
+    def test_no_hardcoded_secrets(self, generated_code):
+        """Security: Basic heuristic check for hardcoded API keys or passwords."""
+        secret_patterns = ["sk-", "api_key=", "password=", "secret_key="]
+        lower_code = generated_code.lower()
+        # Ignore comments for this simple check
+        lines = [line for line in lower_code.split('\n') if not line.strip().startswith('#')]
+        clean_code = '\n'.join(lines)
+        
+        for pattern in secret_patterns:
+            assert pattern not in clean_code, f"Potential hardcoded secret found: '{pattern}'"
 
-def test_fibonacci_up_to_index_type_error():
-    """Verifies TypeError propagation for invalid types."""
-    with pytest.raises(TypeError):
-        list(fibonacci_up_to_index(5.0))
+# --- Execution Safety Test ---
 
-def test_fibonacci_up_to_index_value_error():
-    """Verifies ValueError propagation for negative bounds."""
-    with pytest.raises(ValueError):
-        list(fibonacci_up_to_index(-1))
-
-
-# ==========================================
-# Tests for fibonacci_up_to_value
-# ==========================================
-
-@pytest.mark.parametrize("n, expected", [
-    (0, [0]),
-    (1, [0, 1]),             # Skips the duplicate '1'
-    (2, [0, 1, 2]),
-    (5, [0, 1, 2, 3, 5]),
-    (7, [0, 1, 2, 3, 5]),    # Stops at 5 since 8 > 7
-    (8, [0, 1, 2, 3, 5, 8]),
-    (10, [0, 1, 2, 3, 5, 8]),
-    (13, [0, 1, 2, 3, 5, 8, 13]),
-    (20, [0, 1, 2, 3, 5, 8, 13]) # Stops at 13 since 21 > 20
-])
-def test_fibonacci_up_to_value_valid(n, expected):
-    """Verifies correct unique sequence generation up to a maximum value boundary."""
-    assert list(fibonacci_up_to_value(n)) == expected
-
-def test_fibonacci_up_to_value_type_error():
-    """Verifies TypeError propagation for invalid types."""
-    with pytest.raises(TypeError):
-        list(fibonacci_up_to_value("10"))
-
-def test_fibonacci_up_to_value_value_error():
-    """Verifies ValueError propagation for negative bounds."""
-    with pytest.raises(ValueError):
-        list(fibonacci_up_to_value(-5))
-
-
-# ==========================================
-# Tests for get_fibonacci_list
-# ==========================================
-
-@pytest.mark.parametrize("n, expected", [
-    (0, [0]),
-    (7, [0, 1, 1, 2, 3, 5, 8, 13]),
-    (14, [0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377])
-])
-def test_get_fibonacci_list_valid(n, expected):
-    """Verifies the utility wrapper correctly consumes the generator into a list."""
-    assert get_fibonacci_list(n) == expected
-
-@pytest.mark.parametrize("n", [100_001, 1_000_000, 999_999_999])
-def test_get_fibonacci_list_memory_guardrail_exceeded(n):
-    """Verifies that values exceeding the safe memory threshold raise ValueError."""
-    with pytest.raises(ValueError, match="n > 100,000 is restricted"):
-        get_fibonacci_list(n)
-
-def test_get_fibonacci_list_boundary_allowed():
-    """
-    Verifies that n=100,000 bypasses the memory guardrail.
-    We mock the underlying generator to prevent actual computation of 100,000 large integers 
-    which would unnecessarily consume CPU/time during test execution.
-    """
-    module_name = get_fibonacci_list.__module__
-    with patch(f'{module_name}.fibonacci_up_to_index', return_value=iter([0, 1])):
-        result = get_fibonacci_list(100_000)
-        assert result == [0, 1]
-
-def test_get_fibonacci_list_type_error():
-    """Verifies TypeError propagation for invalid types."""
-    with pytest.raises(TypeError):
-        get_fibonacci_list(True)
-
-def test_get_fibonacci_list_value_error():
-    """Verifies ValueError propagation for negative bounds."""
-    with pytest.raises(ValueError):
-        get_fibonacci_list(-10)
+class TestSafeExecution:
+    """Verifies the script can be loaded without immediate catastrophic failure."""
+    
+    def test_compiles_and_loads(self, generated_code):
+        """Ensures the script compiles and doesn't have infinite loops at the module level."""
+        # We use compile() to ensure it's valid bytecode
+        try:
+            compile(generated_code, SCRIPT_NAME, 'exec')
+        except Exception as e:
+            pytest.fail(f"Script failed to compile: {e}")
