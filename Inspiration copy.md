@@ -51,7 +51,7 @@ The project was constructed iteratively across seven architectural phases:
    Built a Streamlit dashboard with real-time token streaming, deep-thinking visualization, interactive approval buttons, and state-aware resumption. API keys are masked using $k_{\text{display}} = k[:4] + \dots + k[-4:]$ to prevent leakage.
 
 7. **Hardening & Polish**  
-   Integrated `uv` for cryptographic dependency locking, enforced `.env` permission checks (`chmod 600`), added mandatory module docstring validation via regex, and implemented path traversal sanitization: $\texttt{sanitize\_path}(p) \rightarrow \texttt{basename}(p)$.
+   Integrated `uv` for cryptographic dependency locking, enforced `.env` permission checks (`chmod 600`), added mandatory module docstring validation via regex, and implemented path traversal sanitization: $$\texttt{sanitize\_path}(p) \rightarrow \texttt{basename}(p)$$.
 
 ---
 
