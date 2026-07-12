@@ -1,12 +1,6 @@
-You're right - the issue is that GitHub's Markdown renderer doesn't natively support LaTeX at all (unless you have a browser extension or specific repository settings enabled). 
-
-Here's the document with **all math expressions reformatted to work in plain GitHub Markdown** while keeping the mathematical intent clear:
-
----
-
 # Qwen-Dev-Swarm Inspiration
 
-## Inspiration
+## 🌟 Inspiration
 
 The genesis of **Qwen-Dev-Swarm** stemmed from a recurring frustration in modern AI-assisted development: LLMs excel at generating syntactically correct code, but consistently fail at producing production-ready artifacts. Snippets often lack defensive typing, skip edge-case handling, ignore security best practices, and omit deterministic tests.
 
@@ -14,7 +8,7 @@ I wanted to bridge the gap between "AI code snippet" and "verifiable, deployable
 
 ---
 
-## What I Learned
+## 🧠 What I Learned
 
 Building this project was a deep dive into the intersection of LLM orchestration, systems security, and stateful workflow design:
 
@@ -36,7 +30,7 @@ Building this project was a deep dive into the intersection of LLM orchestration
 
 ---
 
-## How I Built It
+## ️🛠️ How I Built It
 
 The project was constructed iteratively across seven architectural phases:
 
@@ -80,7 +74,7 @@ Integrated `uv` for cryptographic dependency locking, enforced `.env` permission
 
 ---
 
-## Challenges Faced & Solutions
+## 🧗 Challenges Faced & Solutions
 
 | Challenge | Root Cause | Solution |
 |-----------|------------|----------|
@@ -93,36 +87,6 @@ Integrated `uv` for cryptographic dependency locking, enforced `.env` permission
 
 ---
 
-## Final Reflection
+## 🪞 Final Reflection
 
 Building **Qwen-Dev-Swarm** transformed my understanding of what it takes to move from "AI-assisted scripting" to **autonomous, verifiable software engineering**. The project proved that with strict guardrails, true isolation, and iterative self-correction, LLMs can be elevated from creative typists to reliable engineering partners.
-
----
-
-## Alternative: If You Need Actual LaTeX Rendering
-
-If you absolutely need LaTeX rendering on GitHub, here are your options:
-
-### Option 1: Use GitHub's Native Math Support (Beta)
-GitHub now supports LaTeX in Markdown using `$` delimiters:
-- Inline: `$E = mc^2$`
-- Display: `$$E = mc^2$$`
-
-**Important**: You must enable it in your repository settings or use a `.md` file with proper frontmatter.
-
-### Option 2: Use a GitHub Pages Site
-Create a GitHub Pages site with MathJax or KaTeX support for full LaTeX rendering.
-
-### Option 3: Use a Browser Extension
-Install the "GitHub Math Display" extension or similar for Chrome/Firefox.
-
-### Option 4: Use a Different Platform
-Platforms like GitLab, HackMD, or Obsidian Publish support LaTeX natively.
-
-### Option 5: Image-Based Equations
-Generate equation images from tools like QuickLaTeX and embed them:
-```markdown
-![Equation](https://latex.codecogs.com/svg.latex?E%3Dmc%5E2)
-```
-
-The document above uses **Unicode symbols and bold text** for mathematical expressions, which renders perfectly on GitHub without any special rendering engine.
