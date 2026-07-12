@@ -1,3 +1,9 @@
+You're right! The issue is that underscores `_` in LaTeX math mode need to be escaped or handled properly. In `\text{sanitize_path}`, the underscore is causing the error because it's interpreted as a subscript operator in math mode.
+
+Here's the corrected version of the document with proper LaTeX escaping:
+
+---
+
 # Qwen-Dev-Swarm Inspiration
 
 ## Inspiration
@@ -90,3 +96,21 @@ $$\text{sanitize\_path}(p) \rightarrow \text{basename}(p)$$
 ## Final Reflection
 
 Building **Qwen-Dev-Swarm** transformed my understanding of what it takes to move from "AI-assisted scripting" to **autonomous, verifiable software engineering**. The project proved that with strict guardrails, true isolation, and iterative self-correction, LLMs can be elevated from creative typists to reliable engineering partners.
+
+---
+
+## LaTeX Rendering Notes
+
+This document uses properly escaped underscores in LaTeX math mode:
+
+- **Correct**: `$\text{sanitize\_path}(p)$` (underscore escaped with `\_`)
+- **Correct**: `$\text{assert\_f}(x)$` (underscore escaped with `\_`)
+- **Incorrect**: `$\text{sanitize_path}(p)$` (would cause error)
+
+### Key Escaping Rules for GitHub LaTeX:
+- Use `\_` instead of `_` inside `\text{}` commands
+- Use `$...$` for inline math
+- Use `$$...$$` for display math
+- Escape special characters: `\_`, `\%`, `\$`, `\&`, etc.
+
+For GitHub, ensure that **MathJax** or **KaTeX** is enabled in your repository settings or use a viewer that supports LaTeX rendering.
