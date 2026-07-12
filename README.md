@@ -38,7 +38,7 @@ Qwen-Dev-Swarm is a production-grade, multi-agent AI framework designed to auton
 
 ---
 
-## ️ Architecture & Workflow
+## ️🏗️ Architecture & Workflow
 
 1. **Blueprint Ingestion & Guardrails**: The user provides a feature request. The multi-layered guardrail normalizes the input, checks regex patterns, and runs semantic analysis to block prompt injections.
 2. **Meta-Prompt Synthesis**: The `Prompt_Engineer_Agent` translates the request into a hardened, adversarial system prompt.
@@ -227,7 +227,7 @@ uv run streamlit run ui.py --server.port 8501 --server.address 0.0.0.0 --server.
 
 ---
 
-## Inspiration
+## 🌟 Inspiration
 
 ### Genesis
 
@@ -316,16 +316,22 @@ Building **Qwen-Dev-Swarm** transformed my understanding of what it takes to mov
 ---
 
 
+## 🤖 AI Tools Leveraged
+
+- **Qwen (Tongyi Qianwen)**: The core LLM driving the multi-agent swarm (`qwen3.7-max` and `qwen-plus`).
+- **Alibaba Cloud DashScope**: The cloud API infrastructure hosting the Qwen model inference.
+- **OpenAI Python SDK**: The standardized client wrapper for seamless streaming and tool-calling.
+- **Qwen Studio / Qwen Chat**: Used for architectural brainstorming and debugging async generators.
+- **Google Gemini**: Used for cross-referencing Python documentation and troubleshooting edge cases.
+
+---
+
+
 ## 🛠️ Installation & Setup
 
 ```bash
 
 ```
-
----
-
-
-
 
 
 ---
