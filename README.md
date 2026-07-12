@@ -123,7 +123,7 @@ uv sync
 
 3. **Automated Sandbox Provisioning**
 
-**No manual Docker builds required!** The system features an **Always-Fresh Docker Image Builder** that runs automatically in the background whenever the application starts. It removes outdated images, rebuilds a fresh minimal image from `Dockerfile.sandbox` (including `pytest`), and ensures the environment is perfectly synchronized.
+  **No manual Docker builds required!** The system features an **Always-Fresh Docker Image Builder** that runs automatically in the background whenever the application starts. It removes outdated images, rebuilds a fresh minimal image from `Dockerfile.sandbox` (including `pytest`), and ensures the environment is perfectly synchronized.
 
 4. **Configure Environment Variables**
 
