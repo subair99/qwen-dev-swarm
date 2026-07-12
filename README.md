@@ -16,7 +16,7 @@ Qwen-Dev-Swarm is a production-grade, multi-agent AI framework designed to auton
 
 ## ✨ Key Features
 
-- 🤖 **Expanded Specialized Agent Swarm**: A comprehensive crew of distinct roles collaborating to ensure high-quality output:
+- 🐝 **Expanded Specialized Agent Swarm**: A comprehensive crew of distinct roles collaborating to ensure high-quality output:
   - **Prompt Engineer**: Translates raw requests into hardened system prompts.
   - **Software Architect**: Decomposes complex features into modular, DRY technical specifications.
   - **Lead Coder**: Writes production-grade, defensively typed code.
@@ -336,7 +336,9 @@ Building **Qwen-Dev-Swarm** transformed my understanding of what it takes to mov
 
 ---
 
+## 📜 License
 
+**This project is provided as-is for educational and development purposes.**
 
 
 
