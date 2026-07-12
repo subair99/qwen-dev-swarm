@@ -34,7 +34,7 @@ Qwen-Dev-Swarm is a production-grade, multi-agent AI framework designed to auton
 - 📝 **Mandatory Documentation Enforcement**: Ensures every generated script starts with a comprehensive module-level docstring via prompt engineering, AST review, and post-processing regex fallbacks.
 - 📊 **Robust QA Parsing**: Features a multi-stage JSON parser with regex and heuristic fallbacks to prevent infinite retry loops caused by LLM formatting quirks.
 - 🔐 **API Key Hardening**: Features secret masking for safe UI/log display, strict `.env` file permission checks, and zero environment variable leakage to the sandbox.
-- ️ **Real-Time Mission Control UI**: A beautiful Streamlit dashboard featuring live token streaming, deep-thinking visualization, and interactive HITL checkpoints.
+- ️🖥️ **Real-Time Mission Control UI**: A beautiful Streamlit dashboard featuring live token streaming, deep-thinking visualization, and interactive HITL checkpoints.
 
 ---
 
@@ -56,7 +56,9 @@ Qwen-Dev-Swarm is a production-grade, multi-agent AI framework designed to auton
 
 ## 📁 Project Structure
 
+```text
 qwen-dev-swarm/
+│
 ├── .streamlit/                  # Streamlit UI configuration
 │   └── config.toml              # Streamlit theme, server, and UI settings
 ├── config/                      # Modular configuration settings
@@ -89,11 +91,68 @@ qwen-dev-swarm/
 ├── requirements.txt             # Fallback dependencies list for standard pip installations
 ├── sandbox.py                   # Manages the Docker container lifecycle and resource limits
 ├── ui.py                        # The Streamlit frontend (Mission Control Dashboard)
-└── uv.lock                      # Cryptographically locked dependencies for `uv`
+└── uv.lock                      # Cryptographically locked dependencies for uv
+```
+
+---
+
+## 📋 Prerequisites
+
+- **Python 3.12+**
+- **uv** (Recommended package manager)
+- **Docker Engine / Docker Desktop** (Required for the secure sandbox)
+- An **API Key** for Aliyun DashScope (Qwen API) or a compatible OpenAI endpoint.
+
+---
+
+## 🛠️ Installation & Setup
+
+1. **Clone the Repository**
+
+```bash
+git clone https://github.com/subair99/qwen-dev-swarm.git
+cd qwen-dev-swarm
+```
+
+---
+
+## 🛠️ Installation & Setup
+
+```bash
+
+```
+
+---
+
+## 🛠️ Installation & Setup
+
+```bash
+
+```
+
+---
+
+## 🛠️ Installation & Setup
+
+```bash
+
+```
+
+---
+
+## 🛠️ Installation & Setup
+
+```bash
+
+```
 
 ---
 
 
+
+
+
+---
 
 
 
