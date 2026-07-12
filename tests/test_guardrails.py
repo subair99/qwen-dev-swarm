@@ -1,6 +1,5 @@
-# test_guardrails.py
-
-# run with: uv run pytest test_guardrails.py -v
+# test/test_guardrails.py
+# run with: uv run pytest test/test_guardrails.py -v
 
 import os
 import pytest

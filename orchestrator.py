@@ -44,8 +44,15 @@ def parse_qa_feedback(raw_text: str) -> Dict[str, Any]:
     logger.warning(f"QA JSON parsing failed. Using heuristic fallback. Raw text: {raw_text[:150]}...")
     lower_text = raw_text.lower()
     
-    is_pass = any(word in lower_text for word in ["success", "passed", "looks good", "no errors", "perfect", "correct"])
-    is_fail = any(word in lower_text for word in ["error", "failed", "exception", "fix", "bug", "traceback"])
+    # Use regex word boundaries (\b) to prevent "error" matching inside "errors"
+    pass_words = r"\b(success|passed|looks good|no errors|no issues|perfect|correct)\b"
+    fail_words = r"\b(error|failed|exception|fix|bug|traceback)\b"
+    
+    # Special case: "no errors" or "no issues" should strongly indicate a pass
+    has_no_errors = bool(re.search(r"\bno (errors|issues)\b", lower_text))
+    
+    is_pass = bool(re.search(pass_words, lower_text)) or has_no_errors
+    is_fail = bool(re.search(fail_words, lower_text)) and not has_no_errors
 
     lines = raw_text.strip().split('\n')
     error_summary = lines[-1] if lines else "Unknown error"

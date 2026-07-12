@@ -1,6 +1,5 @@
-# test_generated_script.py
-
-# run with: uv run pytest test_generated_script.py -v
+# test/test_generated_script.py
+# run with: uv run pytest test/test_generated_script.py -v
 
 """
 Universal Structural & Security Gatekeeper for generated_script.py.

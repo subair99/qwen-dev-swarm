@@ -1,6 +1,5 @@
-# test_connection.py
-
-# run with: uv run python test_connection.py
+# test/test_connection.py
+# run with: uv run python test/test_connection.py
 
 import sys
 import json
