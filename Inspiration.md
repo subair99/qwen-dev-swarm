@@ -1,3 +1,7 @@
+You're right! GitHub Markdown doesn't natively render LaTeX math expressions. Here's a revised version that uses **GitHub-compatible formatting** with proper escaping and alternative representations:
+
+---
+
 # Qwen-Dev-Swarm Inspiration
 
 ## Inspiration
@@ -14,19 +18,15 @@ Building this project was a deep dive into the intersection of LLM orchestration
 
 - **Multi-Agent Orchestration vs. Monolithic Prompts**: Splitting responsibilities across specialized agents (Architect, Coder, Reviewer, Security_Auditor, QA_Analyst) drastically improved output quality. The separation of concerns reduced context pollution and enabled targeted feedback loops.
 
-- **True Sandbox Isolation**: I learned that `docker run` alone is insufficient for security. True isolation requires a combination of flags: `--network none`, `--read-only`, `--user 1000:1000`, `--pids-limit`, and `cgroup`-enforced memory/CPU caps. The attack surface \(A\) approaches zero when:
+- **True Sandbox Isolation**: I learned that `docker run` alone is insufficient for security. True isolation requires a combination of flags: `--network none`, `--read-only`, `--user 1000:1000`, `--pids-limit`, and `cgroup`-enforced memory/CPU caps. The attack surface **A** approaches zero when:
 
-\[
-A \approx \emptyset \quad \text{under} \quad (\text{net} = \emptyset) \land (\text{fs} = \text{ro}) \land (\text{uid} = 0)
-\]
+  **(net = ∅) AND (fs = ro) AND (uid = 0)**
 
 - **Streaming LLM Responses & Buffer Management**: Parsing `<thinking>` tags and code blocks in real-time requires a non-blocking state machine. A naive buffer causes deadlocks when LLMs output `<` in code. I implemented a safe-length buffer where:
 
-\[
-B_{\text{safe}} = \max(|\text{tag}|) - 1
-\]
+  **B_safe = max(|tag|) - 1**
 
-ensuring zero character latency while preserving tag boundaries.
+  ensuring zero character latency while preserving tag boundaries.
 
 - **Robust JSON Extraction**: LLMs rarely output perfect JSON. I learned to build a multi-stage parser with regex fallback, bracket extraction, and heuristic scoring rather than relying on `json.loads()` alone.
 
@@ -52,16 +52,12 @@ Implemented a 3-tier guardrail system:
 
 The composite guardrail function is defined as:
 
-\[
-\mathrm{G}(x) = \mathrm{True} \iff \bigwedge_{i=1}^{3} L_{i}(x) = \mathrm{PASS}
-\]
+**G(x) = True IF AND ONLY IF [L1(x) = PASS] AND [L2(x) = PASS] AND [L3(x) = PASS]**
 
 ### 4. Orchestrator & Self-Correction Loop (`orchestrator.py`)
 Engineered the state machine that manages generation, sandbox execution, QA analysis, and retries. Implemented bounded retry logic where:
 
-\[
-n \leq N_{\max}
-\]
+**n ≤ N_max**
 
 with decaying hint injection to prevent oscillation. Added mandatory HITL checkpoints before any sandbox execution.
 
@@ -71,18 +67,14 @@ Added `Software_Architect`, `Code_Reviewer`, `Test_Generator_Agent`, `Security_A
 ### 6. Mission Control UI (`ui.py`)
 Built a Streamlit dashboard with real-time token streaming, deep-thinking visualization, interactive approval buttons, and state-aware resumption. API keys are masked using:
 
-\[
-k_{\mathrm{display}} = k[4] + \dots + k[-4:]
-\]
+**k_display = k[4] + ... + k[-4:]**
 
 to prevent leakage.
 
 ### 7. Hardening & Polish
 Integrated `uv` for cryptographic dependency locking, enforced `.env` permission checks (`chmod 600`), added mandatory module docstring validation via regex, and implemented path traversal sanitization:
 
-\[
-\text{sanitize\_path}(p) \rightarrow \text{basename}(p)
-\]
+**sanitize_path(p) → basename(p)**
 
 ---
 
@@ -90,11 +82,11 @@ Integrated `uv` for cryptographic dependency locking, enforced `.env` permission
 
 | Challenge | Root Cause | Solution |
 |-----------|------------|----------|
-| **Infinite Retry Loops** | QA feedback sometimes caused the Coder to oscillate between two flawed implementations. | Implemented bounded retries \(n \leq N_{\max}\) with a convergence threshold. If \(\Delta_{\text{error}} < \varepsilon\) for 3 iterations, the loop forces a structural rewrite. |
+| **Infinite Retry Loops** | QA feedback sometimes caused the Coder to oscillate between two flawed implementations. | Implemented bounded retries **n ≤ N_max** with a convergence threshold. If **Δ_error < ε** for 3 iterations, the loop forces a structural rewrite. |
 | **Sandbox Resource Leaks** | Early Docker runs allowed unlimited PIDs and memory, enabling fork bombs. | Enforced group limits: `--memory=512m --cpus=1.0 --pids-limit=50`. Added `--tmpfs /tmp:noexec` to block binary drops. |
-| **Streaming Parser Deadlocks** | LLMs output `<` in comparisons (e.g., `if a < b:`), causing the `<thinking>` buffer to hang. | Built a non-blocking state machine with safe-length buffering: only retain \(B_{\text{safe}}\) characters. |
-| **Flaky AI-Generated Tests** | Tests used `time.time()` or `assertLess(elapsed, threshold)`, causing CI failures. | Added explicit guardrails in `Software_Architect` and `Code_Reviewer` prompts forbidding time-based assertions. Enforced value-correctness tests: \(\text{assert\_f}(x) = y_{\text{known}}\). |
-| **Prompt Injection Evasion** | Attackers used Unicode escapes, zero-width chars, and semantic role-play to bypass regex. | Implemented 3-tier defense. Semantic layer uses a fast model to compute intent confidence: <br> \(P(\text{malicious} \mid x) > \theta \Rightarrow \text{BLOCK}\). |
+| **Streaming Parser Deadlocks** | LLMs output `<` in comparisons (e.g., `if a < b:`), causing the `<thinking>` buffer to hang. | Built a non-blocking state machine with safe-length buffering: only retain **B_safe** characters. |
+| **Flaky AI-Generated Tests** | Tests used `time.time()` or `assertLess(elapsed, threshold)`, causing CI failures. | Added explicit guardrails in `Software_Architect` and `Code_Reviewer` prompts forbidding time-based assertions. Enforced value-correctness tests: **assert_f(x) = y_known**. |
+| **Prompt Injection Evasion** | Attackers used Unicode escapes, zero-width chars, and semantic role-play to bypass regex. | Implemented 3-tier defense. Semantic layer uses a fast model to compute intent confidence: <br> **P(malicious | x) > θ → BLOCK**. |
 | **HITL State Loss on Pause** | Stopping the generator mid-stream dropped context, forcing full regeneration. | Serialized orchestrator state into `self.state` dict. UI yields `await_human_approval` events and resumes via `approved_code` injection without resetting retry counters. |
 
 ---
@@ -102,3 +94,22 @@ Integrated `uv` for cryptographic dependency locking, enforced `.env` permission
 ## Final Reflection
 
 Building **Qwen-Dev-Swarm** transformed my understanding of what it takes to move from "AI-assisted scripting" to **autonomous, verifiable software engineering**. The project proved that with strict guardrails, true isolation, and iterative self-correction, LLMs can be elevated from creative typists to reliable engineering partners.
+
+---
+
+## Notes for GitHub Rendering
+
+If you want proper math rendering on GitHub, you have a few options:
+
+1. **Use GitHub's native math support** (enabled in 2022):
+   - Wrap inline math with `$...$`
+   - Wrap display math with `$$...$$`
+   - Example: `$B_{\text{safe}} = \max(|\text{tag}|) - 1$`
+
+2. **Use images** of equations generated from tools like QuickLaTeX
+
+3. **Use HTML entities** for special characters where possible
+
+4. **Consider using** a GitHub Pages site with MathJax support for the full documentation
+
+The revised version above uses plain text and code formatting that renders cleanly on GitHub without requiring LaTeX rendering.
