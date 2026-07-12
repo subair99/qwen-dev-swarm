@@ -1,5 +1,3 @@
-# Qwen-Dev-Swarm Inspiration
-
 ## 🌟 Inspiration
 
 The genesis of **Qwen-Dev-Swarm** stemmed from a recurring frustration in modern AI-assisted development: LLMs excel at generating syntactically correct code, but consistently fail at producing production-ready artifacts. Snippets often lack defensive typing, skip edge-case handling, ignore security best practices, and omit deterministic tests.
