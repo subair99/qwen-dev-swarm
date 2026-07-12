@@ -114,9 +114,47 @@ git clone https://github.com/subair99/qwen-dev-swarm.git
 cd qwen-dev-swarm
 ```
 
+2. **Install Dependencies**
+
+```bash
+# Sync dependencies exactly as pinned in the cryptographically hashed uv.lock
+uv sync
+```
+
+3. **Automated Sandbox Provisioning**
+
+**No manual Docker builds required!** The system features an **Always-Fresh Docker Image Builder** that runs automatically in the background whenever the application starts. It removes outdated images, rebuilds a fresh minimal image from `Dockerfile.sandbox` (including `pytest`), and ensures the environment is perfectly synchronized.
+
+4. **Configure Environment Variables**
+
+Create a `.env` file in the project root. **Note: All variables below are strictly required.**
+
+```env
+# Required: Your Aliyun DashScope / Qwen API Key
+QWEN_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
+
+# Required: The base URL for your Qwen API endpoint
+QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+
+# Required: The main model used by the swarm agents
+MODEL_NAME=qwen3.7-max
+
+# Required: The model used for semantic guardrail analysis (qwen-plus recommended)
+GUARDRAIL_MODEL_NAME=qwen-plus
+```
+
+5. **Secure Your Secrets**
+
+```bash
+chmod 600 .env
+```
+
 ---
 
-## 🛠️ Installation & Setup
+## 🎮 Usage
+
+Launch the Mission Control UI (Recommended)
+Start the Streamlit dashboard to interact with the swarm visually:
 
 ```bash
 
