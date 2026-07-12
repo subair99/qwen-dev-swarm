@@ -8,7 +8,7 @@ Qwen-Dev-Swarm is a production-grade, multi-agent AI framework designed to auton
 
 ##  Video Demonstration
 
-> *[https://youtu.be/pP3VpTm1bN4]*
+> *https://youtu.be/pP3VpTm1bN4*
 > 
 > Watch the Qwen-Dev-Swarm Mission Control Panel in action: from prompt to verified, secure code in minutes.
 
