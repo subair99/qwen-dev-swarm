@@ -336,6 +336,9 @@ def create_swarm_agents() -> Dict[str, QwenAgent]:
             "as they cause flaky tests on CI. Instead, require correctness-based assertions that verify actual values.\n"
             "- Require test coverage for: boundary values (0, 1, 2), known reference values (e.g., fib(10)=55, fib(20)=6765), "
             "type rejections (including booleans), and negative bounds.\n"
+            "- DOCUMENTATION ARCHITECTURE: Explicitly define the requirements for the module-level docstring. "
+            "Specify exactly what it must cover (e.g., 'Must include Big-O complexity for the core sorting algorithm', "
+            "'Must detail the I/O optimization strategy').\n"
             "- Respond ONLY with structural requirements, method signatures, or architectural workflow blueprints."
         )
     )
@@ -368,7 +371,20 @@ def create_swarm_agents() -> Dict[str, QwenAgent]:
             "to disable this limit and prevent ValueErrors.\n"
             "9. NO COMMAND-LINE ARGUMENTS: Do not use argparse or sys.argv for required inputs. The script will be executed "
             "in a non-interactive sandbox environment without command-line arguments. Use hardcoded default values "
-            "(e.g., n=10) or define functions that accept parameters instead of requiring CLI input."
+            "(e.g., n=10) or define functions that accept parameters instead of requiring CLI input.\n"
+            "10. MANDATORY MODULE DOCSTRING: Every generated Python script MUST begin with a comprehensive, professional "
+            "module-level docstring (triple-quoted string). This docstring must include:\n"
+            "    - A clear, concise summary of the module's purpose.\n"
+            "    - A detailed description of the key features, algorithms, or utilities provided.\n"
+            "    - Time/Space complexity notes for critical functions (e.g., O(n), O(log n)).\n"
+            "    - Any important usage notes or dependencies.\n"
+            "    The docstring is the very first thing in the file, immediately following any `__future__` imports.\n\n"
+            "    EXAMPLE OF EXPECTED DOCSTRING FORMAT:\n"
+            '    """\n'
+            "    Production-hardened Fibonacci sequence generator and utilities.\n\n"
+            "    This module provides highly optimized, iterative generators for Fibonacci sequences,\n"
+            "    alongside an O(log n) Fast Doubling utility for retrieving specific terms.\n"
+            '    """'
         )
     )
  
@@ -420,7 +436,10 @@ def create_swarm_agents() -> Dict[str, QwenAgent]:
             "4. MISLEADING COMMENTS: Comments that contradict the code, make unsupported performance claims, "
             "or describe behavior that doesn't match the implementation.\n"
             "5. MISSING REFERENCE VALUES: No tests against known correct outputs for larger inputs "
-            "(e.g., no test that fib(10) == 55 or fib(20) == 6765).\n\n"
+            "(e.g., no test that fib(10) == 55 or fib(20) == 6765).\n"
+            "6. MISSING OR POOR DOCSTRINGS: The script must start with a comprehensive, professional module-level "
+            "docstring (triple-quoted string) that accurately reflects the code's purpose, features, and complexity. "
+            "If it is missing, generic, or poorly formatted, flag it as an issue.\n\n"
             
             "OUTPUT FORMAT:\n"
             "Respond with a JSON object:\n"
@@ -440,7 +459,7 @@ def create_swarm_agents() -> Dict[str, QwenAgent]:
     )
 
     # ─────────────────────────────────────────────────────────────
-    # 🆕 NEW AGENTS FOR SWARM EXPANSION
+    #  NEW AGENTS FOR SWARM EXPANSION
     # ─────────────────────────────────────────────────────────────
     test_generator = create_agent(
         name="Test_Generator_Agent",

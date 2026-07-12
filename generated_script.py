@@ -1,115 +1,150 @@
-from typing import Generator
+"""
+Production-hardened Fibonacci sequence module.
 
+This module provides highly optimized, memory-efficient functions to calculate
+Fibonacci numbers up to a given index `n`. It strictly enforces type safety,
+bounds checking, and utilizes an O(1) auxiliary space generator for lazy evaluation.
+"""
 
-def _fibonacci_generator() -> Generator[int, None, None]:
-    """Generates an infinite sequence of Fibonacci numbers.
-
-    Utilizes an iterative state-transition approach to ensure O(1) auxiliary
-    space and avoid Python's recursion depth limits.
-
-    Yields:
-        int: The next Fibonacci number in the sequence, starting from F(0).
-    """
-    a, b = 0, 1
-    while True:
-        yield a
-        a, b = b, a + b
+from typing import Iterator
 
 
 def _validate_n(n: int) -> None:
     """Validates the input parameter `n` for Fibonacci calculations.
 
-    Ensures `n` is strictly an integer (explicitly rejecting booleans, floats,
-    strings, and None) and is non-negative.
-
     Args:
-        n: The target index or count for the Fibonacci sequence.
+        n: The target index/term count for the Fibonacci sequence.
 
     Raises:
-        TypeError: If `n` is not strictly an integer.
-        ValueError: If `n` is less than zero.
+        TypeError: If `n` is not strictly an integer (e.g., float, bool, string).
+        ValueError: If `n` is a negative integer.
     """
-    if isinstance(n, bool) or not isinstance(n, int):
-        raise TypeError(f"Expected 'n' to be an integer, got {type(n).__name__}.")
+    # Strict type checking: `type(n) is not int` correctly rejects booleans 
+    # (which are a subclass of int) as well as floats and strings.
+    if type(n) is not int:
+        raise TypeError(
+            f"Input 'n' must be strictly an integer, got {type(n).__name__}."
+        )
+    
+    # Mathematical bounds checking: Fibonacci indices cannot be negative 
+    # in this standard sequence implementation.
     if n < 0:
-        raise ValueError(f"Expected 'n' to be non-negative, got {n}.")
+        raise ValueError(
+            f"Input 'n' must be non-negative, got {n}. Negative indices are "
+            "mathematically invalid for this implementation."
+        )
 
 
-def get_fibonacci(n: int) -> int:
-    """Returns the n-th Fibonacci number (0-indexed).
+def fibonacci_generator(n: int) -> Iterator[int]:
+    """Generates Fibonacci numbers up to the n-th index lazily.
 
-    Calculates the Fibonacci number at index `n` using an O(n) iterative
-    approach with O(1) auxiliary space. Leverages the core generator to
-    maintain DRY principles.
-
-    Args:
-        n: The 0-based index of the desired Fibonacci number.
-
-    Returns:
-        int: The n-th Fibonacci number.
-
-    Raises:
-        TypeError: If `n` is not strictly an integer.
-        ValueError: If `n` is less than zero.
-    """
-    _validate_n(n)
-    gen = _fibonacci_generator()
-    for _ in range(n):
-        next(gen)
-    return next(gen)
-
-
-def generate_fibonacci_sequence(n: int) -> Generator[int, None, None]:
-    """Yields the first n Fibonacci numbers.
-
-    Generates a lazy sequence of `n` Fibonacci numbers starting from F(0).
-    Maintains an O(1) memory footprint regardless of the size of `n`,
-    preventing memory exhaustion for large values.
+    This function utilizes an iterative approach to yield Fibonacci numbers
+    one at a time. It operates in O(n) time complexity and strictly O(1) 
+    auxiliary space complexity, making it safe for extremely large values of `n` 
+    without risking memory exhaustion.
 
     Args:
-        n: The total count of Fibonacci numbers to yield.
+        n: The maximum index of the Fibonacci sequence to generate (inclusive).
+           For example, n=5 yields F_0 through F_5.
 
     Yields:
-        int: The next Fibonacci number in the sequence, up to `n` items.
+        int: The next Fibonacci number in the sequence, starting from F_0 = 0.
 
     Raises:
         TypeError: If `n` is not strictly an integer.
-        ValueError: If `n` is less than zero.
+        ValueError: If `n` is negative.
     """
     _validate_n(n)
-    gen = _fibonacci_generator()
-    for _ in range(n):
-        yield next(gen)
+    
+    # F_0 = 0, F_1 = 1
+    a, b = 0, 1
+    
+    # Iterate n + 1 times to include both the 0th and n-th indices.
+    for _ in range(n + 1):
+        yield a
+        
+        # O(1) auxiliary space rationale: We only maintain the two most recent 
+        # state variables (a and b) in memory. We do not store the historical 
+        # sequence, preventing O(n) memory scaling.
+        a, b = b, a + b
 
 
-def main() -> None:
-    """Hardcoded execution block for sandbox demonstration."""
-    n = 50
-    
-    print(f"--- Fibonacci Demonstration (n={n}) ---")
-    
-    nth_fib = get_fibonacci(n)
-    print(f"F({n}) = {nth_fib}")
-    
-    print(f"\nFirst {n} Fibonacci numbers:")
-    seq = list(generate_fibonacci_sequence(n))
-    print(seq)
-    
-    print("\n--- Edge Cases ---")
-    print(f"F(0) = {get_fibonacci(0)}")
-    print(f"F(1) = {get_fibonacci(1)}")
-    print(f"Sequence(0) = {list(generate_fibonacci_sequence(0))}")
-    print(f"Sequence(1) = {list(generate_fibonacci_sequence(1))}")
-    print(f"Sequence(2) = {list(generate_fibonacci_sequence(2))}")
-    
-    print("\n--- Error Handling ---")
-    test_cases = [-1, 5.5, "10", True, None]
-    for invalid_n in test_cases:
-        try:
-            get_fibonacci(invalid_n)
-        except (TypeError, ValueError) as e:
-            print(f"Input {repr(invalid_n):<6} raised {type(e).__name__}: {e}")
+def fibonacci_list(n: int) -> list[int]:
+    """Calculates and returns the Fibonacci sequence up to the n-th index eagerly.
+
+    This function consumes the lazy `fibonacci_generator` to build and return 
+    a complete list in memory. Adheres to DRY principles by delegating the 
+    core mathematical logic to the generator.
+
+    Args:
+        n: The maximum index of the Fibonacci sequence to generate (inclusive).
+
+    Returns:
+        list[int]: A list containing the Fibonacci numbers from F_0 to F_n.
+
+    Raises:
+        TypeError: If `n` is not strictly an integer.
+        ValueError: If `n` is negative.
+    """
+    # Consume the generator to construct the eager list.
+    return list(fibonacci_generator(n))
 
 
 if __name__ == "__main__":
-    main()
+    # Hardcoded default for sandbox execution demonstration
+    DEFAULT_N = 50
+
+    print("=" * 60)
+    print("FIBONACCI MODULE DEMONSTRATION")
+    print("=" * 60)
+
+    # 1. Demonstrate Eager Evaluation (List)
+    print(f"\n[1] Eager Evaluation (List) for n={DEFAULT_N}")
+    print("-" * 40)
+    fib_list = fibonacci_list(DEFAULT_N)
+    print(f"Total terms generated: {len(fib_list)}")
+    print(f"First 5 terms: {fib_list[:5]}")
+    print(f"Last term (F_{DEFAULT_N}): {fib_list[-1]}")
+
+    # 2. Demonstrate Lazy Evaluation (Generator)
+    print(f"\n[2] Lazy Evaluation (Generator) for n=10")
+    print("-" * 40)
+    fib_gen = fibonacci_generator(10)
+    print(f"Generator object created: {fib_gen}")
+    print("Yielding terms manually via next():")
+    for i in range(5):
+        print(f"  F_{i} = {next(fib_gen)}")
+    print("Consuming the rest of the generator into a list:")
+    print(f"  Remaining terms: {list(fib_gen)}")
+
+    # 3. Demonstrate Edge Cases
+    print("\n[3] Edge Cases (n=0 and n=1)")
+    print("-" * 40)
+    print(f"Fibonacci list for n=0: {fibonacci_list(0)}")
+    print(f"Fibonacci list for n=1: {fibonacci_list(1)}")
+
+    # 4. Demonstrate Error Handling
+    print("\n[4] Error Handling Demonstrations")
+    print("-" * 40)
+    
+    # Test TypeError with a float
+    try:
+        fibonacci_generator(10.5)
+    except TypeError as e:
+        print(f"Caught TypeError (float): {e}")
+
+    # Test TypeError with a boolean
+    try:
+        fibonacci_list(True)
+    except TypeError as e:
+        print(f"Caught TypeError (bool): {e}")
+
+    # Test ValueError with a negative integer
+    try:
+        fibonacci_generator(-5)
+    except ValueError as e:
+        print(f"Caught ValueError (negative): {e}")
+        
+    print("\n" + "=" * 60)
+    print("DEMONSTRATION COMPLETE")
+    print("=" * 60)

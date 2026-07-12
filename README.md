@@ -61,9 +61,6 @@ qwen-dev-swarm/
 │   ├── __init__.py
 │   ├── agents.py                   # Core definitions for the specialized AI agents
 │   └── guardrails.py               # Multi-layered prompt defense & path sanitization
-├── generated_codes/                # Output directory for the swarm's generated code
-│   ├── eratosthenes_algorithm.py
-│   └── fibonacci_sequence.py
 ├── .gitignore
 ├── .python-version                 # Python version pin (3.12+)
 ├── Dockerfile.sandbox              # Docker config for the secure, isolated code execution environment
@@ -89,7 +86,7 @@ qwen-dev-swarm/
 - **Python 3.12+**
 - **[uv](https://docs.astral.sh/uv/)** (Recommended package manager)
 - **[Docker Engine / Docker Desktop](https://www.docker.com/)** (Required for the secure sandbox)
-- An API Key for **Aliyun DashScope** (Qwen API) or compatible OpenAI endpoint.
+- An API Key for **Aliyun DashScope** (Qwen API).
 
 ---
 

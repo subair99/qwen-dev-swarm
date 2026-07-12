@@ -77,7 +77,7 @@ class QwenDevSwarmOrchestrator:
             "file_path": self._file_path,
             "model_in_use": getattr(settings, "MODEL_NAME", "qwen3.7-max"),
             "history": [],
-            # 🛡️ PERSISTENT STATE FOR LOOP RESUMPTION
+            # ️ PERSISTENT STATE FOR LOOP RESUMPTION
             "is_paused": False,
             "retry_count": 0,
             "clean_code": "",
@@ -161,7 +161,7 @@ class QwenDevSwarmOrchestrator:
             self.run_autonomous_generation(self.state["current_blueprint"])
 
         # ─────────────────────────────────────────────────────────────
-        # 🔄 SELF-CORRECTION LOOP
+        #  SELF-CORRECTION LOOP
         # ─────────────────────────────────────────────────────────────
         while True:
             print(f"[ORCHESTRATOR] Loop iteration {retry_count}. Max retries: {self.max_retries}")
@@ -178,7 +178,7 @@ class QwenDevSwarmOrchestrator:
                 break 
 
             # ─────────────────────────────────────────────────────────────
-            # 1️⃣ HANDLE HUMAN APPROVED CODE (One-shot execution)
+            # 1️ HANDLE HUMAN APPROVED CODE (One-shot execution)
             # ─────────────────────────────────────────────────────────────
             if approved_code:
                 print("[ORCHESTRATOR] Processing Human Approved Code...")
@@ -324,6 +324,29 @@ class QwenDevSwarmOrchestrator:
                         documented_code = doc_report.get("documented_code", clean_code)
                         readme_md = doc_report.get("readme_md", "")
                         
+                        # 🛡️ POST-PROCESSING: MANDATORY DOCSTRING CHECK
+                        if not re.match(r'^\s*"""', documented_code):
+                            print("[ORCHESTRATOR] Final code missing module docstring. Triggering one last rewrite...")
+                            yield {"event": "docstring_rewrite_start", "status": "RUNNING", "active_agent": "Dynamic_Lead_Coder", "message": "Adding missing module docstring..."}
+                            
+                            rewrite_prompt = (
+                                "The following code is missing the mandatory module-level docstring at the very top. "
+                                "Please output ONLY the complete code with the required docstring added at the beginning. "
+                                "Do not change any logic.\n\n"
+                                f"Code:\n{documented_code}"
+                            )
+                            
+                            rewrite_text = ""
+                            for stream_chunk in self.swarm["coder"].call_llm_stream(rewrite_prompt):
+                                yield stream_chunk
+                                if stream_chunk.get("type") == "content":
+                                    rewrite_text += stream_chunk.get("text", "")
+                                    
+                            documented_code = extract_code_from_markdown(rewrite_text)
+                            # Fallback if the LLM still fails to format it correctly
+                            if not documented_code or not re.match(r'^\s*"""', documented_code):
+                                documented_code = f'"""\nAuto-generated module documentation.\n"""\n\n{documented_code}'
+
                         with open(self.file_path, "w") as f:
                             f.write(documented_code)
                         with open("README.md", "w") as f:
