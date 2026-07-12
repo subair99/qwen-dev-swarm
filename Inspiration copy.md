@@ -1,3 +1,7 @@
+# Qwen-Dev-Swarm Inspiration
+
+---
+
 ## 🌟 Inspiration
 
 The genesis of **Qwen-Dev-Swarm** stemmed from a recurring frustration in modern AI-assisted development: LLMs excel at generating *syntactically correct* code, but consistently fail at producing *production-ready* artifacts. Snippets often lack defensive typing, skip edge-case handling, ignore security best practices, and omit deterministic tests. 
@@ -21,7 +25,7 @@ Building this project was a deep dive into the intersection of LLM orchestration
 
 ---
 
-## 🛠️ How I Built It
+## ️🛠️ How I Built It
 
 The project was constructed iteratively across seven architectural phases:
 
@@ -51,11 +55,14 @@ The project was constructed iteratively across seven architectural phases:
    Built a Streamlit dashboard with real-time token streaming, deep-thinking visualization, interactive approval buttons, and state-aware resumption. API keys are masked using $k_{\text{display}} = k[:4] + \dots + k[-4:]$ to prevent leakage.
 
 7. **Hardening & Polish**  
-   Integrated `uv` for cryptographic dependency locking, enforced `.env` permission checks (`chmod 600`), added mandatory module docstring validation via regex, and implemented path traversal sanitization: $$\texttt{sanitize\_path}(p) \rightarrow \texttt{basename}(p)$$.
+   Integrated `uv` for cryptographic dependency locking, enforced `.env` permission checks (`chmod 600`), added mandatory module docstring validation via regex, and implemented path traversal sanitization:
+   $$
+   \text{sanitize\_path}(p) \rightarrow \text{basename}(p)
+   $$
 
 ---
 
-##  Challenges Faced & Solutions
+## 🧗 Challenges Faced & Solutions
 
 | Challenge | Root Cause | Solution |
 |:---|:---|:---|
@@ -69,4 +76,4 @@ The project was constructed iteratively across seven architectural phases:
 
 ---
 
-Building **Qwen-Dev-Swarm** transformed my understanding of what it takes to move from "AI-assisted scripting" to "autonomous, verifiable software engineering". The project proved that with strict guardrails, true isolation, and iterative self-correction, LLMs can be elevated from creative typists to reliable engineering partners. 🚀
+Building **Qwen-Dev-Swarm** transformed my understanding of what it takes to move from "AI-assisted scripting" to "autonomous, verifiable software engineering". The project proved that with strict guardrails, true isolation, and iterative self-correction, LLMs can be elevated from creative typists to reliable engineering partners. 
