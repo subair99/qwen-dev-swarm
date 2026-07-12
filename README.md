@@ -125,7 +125,7 @@ uv sync
 
 **No manual Docker builds required!** The system features an **Always-Fresh Docker Image Builder** that runs automatically in the background whenever the application starts. It removes outdated images, rebuilds a fresh minimal image from `Dockerfile.sandbox` (including `pytest`), and ensures the environment is perfectly synchronized.
 
-4. **Configure Environment Variables**
+### 4. Configure Environment Variables
 
 Create a `.env` file in the project root. **Note: All variables below are strictly required.**
 
@@ -143,7 +143,7 @@ MODEL_NAME=qwen3.7-max
 GUARDRAIL_MODEL_NAME=qwen-plus
 ```
 
-5. **Secure Your Secrets**
+### 5. Secure Your Secrets
 
 ```bash
 chmod 600 .env
@@ -153,20 +153,60 @@ chmod 600 .env
 
 ## 🎮 Usage
 
-Launch the Mission Control UI (Recommended)
+### 1. Launch the Mission Control UI (Recommended)
+
 Start the Streamlit dashboard to interact with the swarm visually:
 
 ```bash
+uv run streamlit run ui.py
+```
 
+### 2. Run the Comprehensive Test Suite
+
+To verify that the guardrails, orchestrator state machine, JSON parsers, and sandbox isolation are functioning correctly:
+
+```bash
+uv run pytest tests/ -v
+```
+
+### 3. Run via Terminal (CLI Mode)
+
+To test the orchestrator directly in the terminal without the UI:
+
+```bash
+uv run python orchestrator.py
 ```
 
 ---
 
-## 🛠️ Installation & Setup
+## ☁️ Deploying on Alibaba Cloud (ECS)
+
+### To run Qwen-Dev-Swarm in the cloud, use an Alibaba Cloud Elastic Compute Service (ECS) instance.
+1. **Provision an ECS Instance**: Choose Ubuntu 22.04/24.04, at least 2 vCPUs and 4GB RAM.
+
+2. **Security Group**: Allow inbound traffic on Port 22 (SSH) and Port 8501 (Streamlit UI).
+
+3. **Install Prerequisites**:
+
+bash
 
 ```bash
-
+curl -fsSL https://get.docker.com -o get-docker.sh && sh get-docker.sh
+curl -LsSf https://astral.sh/uv/install.sh | sh && source $HOME/.local/bin/env
 ```
+
+4. **Clone, Configure, and Launch**:
+
+bash
+
+```bash
+git clone <your-repo-url> && cd qwen-dev-swarm
+uv sync
+# Add your .env file here
+uv run streamlit run ui.py --server.port 8501 --server.address 0.0.0.0 --server.enableCORS false
+```
+
+5. **Optimize for VPC**: Update `QWEN_BASE_URL` in your `.env` to use the DashScope internal VPC endpoint (e.g., `https://dashscope-vpc.cn-hangzhou.aliyuncs.com/compatible-mode/v1`) to reduce latency and avoid egress costs.
 
 ---
 
