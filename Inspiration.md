@@ -1,6 +1,6 @@
 # Qwen-Dev-Swarm Inspiration
 
-## Inspiration
+## 🌟 Inspiration
 
 The genesis of **Qwen-Dev-Swarm** stemmed from a recurring frustration in modern AI-assisted development: LLMs excel at generating syntactically correct code, but consistently fail at producing production-ready artifacts. Snippets often lack defensive typing, skip edge-case handling, ignore security best practices, and omit deterministic tests.
 
@@ -8,7 +8,7 @@ I wanted to bridge the gap between "AI code snippet" and "verifiable, deployable
 
 ---
 
-## What I Learned
+## 🧠 What I Learned
 
 Building this project was a deep dive into the intersection of LLM orchestration, systems security, and stateful workflow design:
 
@@ -34,7 +34,7 @@ ensuring zero character latency while preserving tag boundaries.
 
 ---
 
-## How I Built It
+## ️🛠️ How I Built It
 
 The project was constructed iteratively across seven architectural phases:
 
@@ -86,7 +86,7 @@ Integrated `uv` for cryptographic dependency locking, enforced `.env` permission
 
 ---
 
-## Challenges Faced & Solutions
+## 🧗 Challenges Faced & Solutions
 
 | Challenge | Root Cause | Solution |
 |-----------|------------|----------|
@@ -99,6 +99,6 @@ Integrated `uv` for cryptographic dependency locking, enforced `.env` permission
 
 ---
 
-## Final Reflection
+## 🪞 Final Reflection
 
 Building **Qwen-Dev-Swarm** transformed my understanding of what it takes to move from "AI-assisted scripting" to **autonomous, verifiable software engineering**. The project proved that with strict guardrails, true isolation, and iterative self-correction, LLMs can be elevated from creative typists to reliable engineering partners.
