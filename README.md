@@ -161,6 +161,12 @@ Start the Streamlit dashboard to interact with the swarm visually:
 uv run streamlit run ui.py
 ```
 
+If you want to stop Streamlit from trying to auto-open a browser use:
+
+```bash
+uv run streamlit run ui.py --server.headless true
+```
+
 ### 2. Run the Comprehensive Test Suite
 
 To verify that the guardrails, orchestrator state machine, JSON parsers, and sandbox isolation are functioning correctly:
