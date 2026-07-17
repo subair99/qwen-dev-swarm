@@ -209,12 +209,12 @@ Create a `.env` file in the project root. **Note: All variables below are strict
 QWEN_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
 
 # Required: The base URL for your Qwen API endpoint
-QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+QWEN_BASE_URL=https://ws-zp9gpq4ly3nzvc4s.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
 
 # Required: The main model used by the swarm agents
 MODEL_NAME=qwen3.7-max
 
-# Required: The model used for semantic guardrail analysis (qwen-plus recommended)
+# Required: The model used for semantic guardrail analysis
 GUARDRAIL_MODEL_NAME=qwen-plus
 ```
 
