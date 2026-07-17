@@ -96,6 +96,81 @@ qwen-dev-swarm/
 
 ---
 
+## 📊 Swarm Architecture Diagram
+
+Here is a comprehensive diagram illustrating the architecture and workflow of the **Qwen-Dev-Swarm**. 
+
+Below is a **Mermaid.js** flowchart followed by a detailed breakdown of each phase.
+
+```mermaid
+graph TD
+    User([👤 User]) -->|Raw Blueprint| Guardrails{️ Multi-Layer Guardrails}
+    Guardrails -->|Clean Prompt| PE[ Prompt Engineer]
+    PE -->|Hardened Prompt| Arch[🏗️ Software Architect]
+    Arch -->|Technical Blueprint| Coder[💻 Dynamic Lead Coder]
+    
+    subgraph Generation & Auditing Phase
+        Coder -->|Draft Code| Sec[🕵️ Security Auditor]
+        Coder -->|Draft Code| TestGen[🧪 Test Generator]
+        Sec -->|Risk Report| HITL
+        TestGen -->|Pytest Suite| HITL
+    end
+
+    HITL{🤝 Human-in-the-Loop}
+    HITL -->|Reject & Hint| Coder
+    HITL -->|Approve & Execute| Sandbox[🐳 Docker Sandbox]
+    
+    subgraph Execution & Self-Correction Loop
+        Sandbox -->|Main Script Output| QA[ QA Analyst]
+        Sandbox -->|Test Results| QA
+        QA -->|Traceback Analysis| CR[🧐 Code Reviewer]
+        CR -->|Refactoring Hints| Coder
+    end
+    
+    Sandbox -->|✅ Success| Doc[📝 Documentation Agent]
+    Doc -->|Final Artifacts| Output([ Production-Ready Code])
+
+    %% Styling for visual clarity
+    classDef agent fill:#2b6cb0,stroke:#63b3ed,color:#fff,stroke-width:2px;
+    classDef human fill:#c05621,stroke:#ed8936,color:#fff,stroke-width:2px;
+    classDef sandbox fill:#2f855a,stroke:#68d391,color:#fff,stroke-width:2px;
+    classDef user fill:#6b46c1,stroke:#b794f4,color:#fff,stroke-width:2px;
+    classDef guard fill:#744210,stroke:#d69e2e,color:#fff,stroke-width:2px;
+    
+    class PE,Arch,Coder,Sec,TestGen,QA,CR,Doc agent;
+    class HITL human;
+    class Sandbox sandbox;
+    class User,Output user;
+    class Guardrails guard;
+```
+
+---
+
+## 🔄 Workflow Breakdown
+
+Here is how the agents collaborate across the four distinct phases of the pipeline:
+
+### Phase 1: Ingestion & Architecture (The Setup)
+1. **User & Guardrails**: The user inputs a raw feature request. The **Multi-Layer Guardrails** instantly sanitize the input, stripping zero-width characters and blocking prompt injections.
+2. **Prompt Engineer**: Translates the clean request into a highly optimized, adversarial system prompt.
+3. **Software Architect**: Decomposes the request into a strict technical blueprint, defining Big-O complexity, DRY principles, and structural constraints.
+
+### Phase 2: Generation & Auditing (The Draft)
+4. **Dynamic Lead Coder**: Spawns dynamically to write the initial Python implementation based strictly on the Architect's blueprint.
+5. **Security Auditor**: Scans the draft code for vulnerabilities (e.g., path traversal, unsafe subprocesses) and generates a risk assessment.
+6. **Test Generator**: Writes a comprehensive, deterministic `pytest` suite to verify the code's logical correctness and edge-case handling.
+
+### Phase 3: Human-in-the-Loop (The Zero-Trust Gate)
+7. **Human Approval**: The swarm physically pauses. The UI displays the code, tests, and security report. The human must explicitly click **"Approve & Execute"**. If rejected, the human can provide a hint, sending the swarm back to the Lead Coder.
+
+### Phase 4: Execution & Self-Correction (The Verification)
+8. **Docker Sandbox**: The approved code is executed in a strictly isolated, read-only, network-disabled Docker container.
+9. **QA Analyst & Code Reviewer (The Loop)**: If the code crashes or tests fail, the **QA Analyst** parses the traceback. The **Code Reviewer** analyzes the logic and sends targeted refactoring hints back to the **Lead Coder**. This loop repeats until the code passes.
+10. **Documentation Agent**: Once the sandbox reports success, this agent injects comprehensive docstrings, type hints, and generates a final README.
+11. **Final Output**: The verified, secure, and fully tested production-ready code is delivered to the user.
+
+---
+
 ## 📋 Prerequisites
 
 - **Python 3.12+**
