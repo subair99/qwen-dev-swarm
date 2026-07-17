@@ -96,7 +96,7 @@ qwen-dev-swarm/
 
 ---
 
-## 📊 Swarm Architecture Diagram
+## ✍️ Swarm Architecture Diagram
 
 Here is a comprehensive diagram illustrating the architecture and workflow of the **Qwen-Dev-Swarm**. 
 
@@ -105,7 +105,7 @@ Below is a **Mermaid.js** flowchart followed by a detailed breakdown of each pha
 ```mermaid
 graph TD
     User([👤 User]) -->|Raw Blueprint| Guardrails{️ Multi-Layer Guardrails}
-    Guardrails -->|Clean Prompt| PE[ Prompt Engineer]
+    Guardrails -->|Clean Prompt| PE[🗣️ Prompt Engineer]
     PE -->|Hardened Prompt| Arch[🏗️ Software Architect]
     Arch -->|Technical Blueprint| Coder[💻 Dynamic Lead Coder]
     
@@ -121,7 +121,7 @@ graph TD
     HITL -->|Approve & Execute| Sandbox[🐳 Docker Sandbox]
     
     subgraph Execution & Self-Correction Loop
-        Sandbox -->|Main Script Output| QA[ QA Analyst]
+        Sandbox -->|Main Script Output| QA[🪄 QA Analyst]
         Sandbox -->|Test Results| QA
         QA -->|Traceback Analysis| CR[🧐 Code Reviewer]
         CR -->|Refactoring Hints| Coder
